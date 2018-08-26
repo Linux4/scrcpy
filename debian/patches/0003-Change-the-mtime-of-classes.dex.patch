@@ -1,0 +1,25 @@
+From 417b27dcba5735268617ae2a7261348f92dae50a Mon Sep 17 00:00:00 2001
+From: yangfl <yangfl@users.noreply.github.com>
+Date: Wed, 27 Nov 2019 00:50:17 +0800
+Subject: [PATCH 3/3] Change the mtime of classes.dex
+
+Make the server build reproducibly.
+---
+ server/build_without_gradle.sh | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/server/build_without_gradle.sh b/server/build_without_gradle.sh
+index b1fdabd..b3e8dfa 100755
+--- a/server/build_without_gradle.sh
++++ b/server/build_without_gradle.sh
+@@ -57,6 +57,7 @@ cd "$CLASSES_DIR"
+     android/view/*.class \
+     com/genymobile/scrcpy/*.class \
+     com/genymobile/scrcpy/wrappers/*.class
++touch -t $(date --date="@$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S) "$BUILD_DIR/classes.dex"
+ 
+ echo "Archiving..."
+ cd "$BUILD_DIR"
+-- 
+2.24.0
+
