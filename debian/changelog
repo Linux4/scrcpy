@@ -1,3 +1,11 @@
+scrcpy (1.12.1+ds-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #947465)
+  * Recommend but not depend on adb
+  * Add upstream metadata
+
+ -- Yangfl <mmyangfl@gmail.com>  Tue, 14 Jan 2020 13:14:59 +0800
+
 scrcpy (1.11+ds-1) unstable; urgency=medium
 
   * Initial release (Closes: #893279)

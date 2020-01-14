@@ -20,14 +20,12 @@ include /usr/share/dpkg/pkg-info.mk
 build:
 	dh build-arch
 	dh build-indep --buildsystem=makefile
-	#dh build-indep --buildsystem=gradle
 
 build-arch:
 	dh build-arch
 
 build-indep:
 	dh build-indep --buildsystem=makefile
-	#dh build-indep --buildsystem=gradle
 
 clean:
 	dh clean
@@ -40,5 +38,11 @@ override_dh_auto_configure-arch:
 	dh_auto_configure -a -- -Dcompile_server=false
 
 override_dh_auto_build-indep:
-	#dh_auto_build -i -- -p server assembleRelease
 	ANDROID_PLATFORM=23 ANDROID_BUILD_TOOLS=debian server/build_without_gradle.sh
+	# dirty hack for reproducible jar build
+	cd build_manual; \
+		unzip scrcpy-server; \
+		touch -t $$(date --date="@${SOURCE_DATE_EPOCH}" +%Y%m%d%H%M.%S) * */*; \
+		chmod 644 * */*; \
+		TZ=UTC zip -X scrcpy-server.zip META-INF/MANIFEST.MF classes.dex; \
+		mv scrcpy-server.zip scrcpy-server

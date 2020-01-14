@@ -1,3 +1,2 @@
 0001-No-Android-Q.patch
-0002-Fix-aidl-option.patch
-0003-Change-the-mtime-of-classes.dex.patch
+0002-Show-a-friendly-hint-for-adb-installation.patch

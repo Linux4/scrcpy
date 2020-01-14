@@ -14,6 +14,8 @@ Build-Depends-Indep:
  android-sdk,
  android-sdk-platform-23,
  default-jdk,
+ unzip,
+ zip,
 Rules-Requires-Root: no
 Standards-Version: 4.4.1
 Homepage: https://github.com/Genymobile/scrcpy
@@ -22,7 +24,8 @@ Vcs-Browser: https://salsa.debian.org/yangfl-guest/scrcpy
 
 Package: scrcpy
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, adb, scrcpy-server,
+Depends: ${misc:Depends}, ${shlibs:Depends}, scrcpy-server,
+Recommends: adb,
 Description: Display and control your Android device
  This application provides display and control of Android devices connected on
  USB (or over TCP/IP). It does not require any root access.
@@ -31,6 +34,7 @@ Description: Display and control your Android device
 
 Package: scrcpy-server
 Architecture: all
+Multi-Arch: foreign
 Depends: ${misc:Depends},
 Description: Display and control your Android device - server binary
  This application provides display and control of Android devices connected on

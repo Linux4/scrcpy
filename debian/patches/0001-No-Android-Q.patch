@@ -1,7 +1,7 @@
-From d137f02ce22644429bf88259c5d658cbe1bfcbb2 Mon Sep 17 00:00:00 2001
+From 408564d1a3de0a0085f4594e451f508d65e489a8 Mon Sep 17 00:00:00 2001
 From: yangfl <yangfl@users.noreply.github.com>
-Date: Wed, 27 Nov 2019 00:47:50 +0800
-Subject: [PATCH 1/3] No Android Q
+Date: Thu, 16 Jan 2020 01:13:22 +0800
+Subject: [PATCH] No Android Q
 
 The SDK 23 in Debian does not have 29 defined, so replace it with hard-coded
 constant.
@@ -27,67 +27,67 @@ index c9a37f8..36b91de 100644
                  Ln.w("Max FPS is only supported since Android 10, the option has been ignored");
              }
 diff --git a/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java b/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
-index 27dcb44..c459245 100644
+index 592bdf6..523012a 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
-@@ -25,7 +25,7 @@ public class ClipboardManager {
-     private Method getGetPrimaryClipMethod() {
-         if (getPrimaryClipMethod == null) {
-             try {
--                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-+                if (Build.VERSION.SDK_INT < 29) {
-                     getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class);
-                 } else {
-                     getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class, int.class);
-@@ -40,7 +40,7 @@ public class ClipboardManager {
-     private Method getSetPrimaryClipMethod() {
-         if (setPrimaryClipMethod == null) {
-             try {
--                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-+                if (Build.VERSION.SDK_INT < 29) {
-                     setPrimaryClipMethod = manager.getClass().getMethod("setPrimaryClip", ClipData.class, String.class);
-                 } else {
-                     setPrimaryClipMethod = manager.getClass().getMethod("setPrimaryClip", ClipData.class,
-@@ -55,7 +55,7 @@ public class ClipboardManager {
+@@ -24,7 +24,7 @@ public class ClipboardManager {
  
-     private static ClipData getPrimaryClip(Method method, IInterface manager) throws InvocationTargetException,
-             IllegalAccessException {
+     private Method getGetPrimaryClipMethod() throws NoSuchMethodException {
+         if (getPrimaryClipMethod == null) {
+-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
++            if (Build.VERSION.SDK_INT < 29) {
+                 getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class);
+             } else {
+                 getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class, int.class);
+@@ -35,7 +35,7 @@ public class ClipboardManager {
+ 
+     private Method getSetPrimaryClipMethod() throws NoSuchMethodException {
+         if (setPrimaryClipMethod == null) {
+-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
++            if (Build.VERSION.SDK_INT < 29) {
+                 setPrimaryClipMethod = manager.getClass().getMethod("setPrimaryClip", ClipData.class, String.class);
+             } else {
+                 setPrimaryClipMethod = manager.getClass().getMethod("setPrimaryClip", ClipData.class, String.class, int.class);
+@@ -45,7 +45,7 @@ public class ClipboardManager {
+     }
+ 
+     private static ClipData getPrimaryClip(Method method, IInterface manager) throws InvocationTargetException, IllegalAccessException {
 -        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
 +        if (Build.VERSION.SDK_INT < 29) {
              return (ClipData) method.invoke(manager, PACKAGE_NAME);
          }
          return (ClipData) method.invoke(manager, PACKAGE_NAME, USER_ID);
-@@ -63,7 +63,7 @@ public class ClipboardManager {
+@@ -53,7 +53,7 @@ public class ClipboardManager {
  
-     private static void setPrimaryClip(Method method, IInterface manager, ClipData clipData) throws InvocationTargetException,
-             IllegalAccessException {
+     private static void setPrimaryClip(Method method, IInterface manager, ClipData clipData)
+             throws InvocationTargetException, IllegalAccessException {
 -        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
 +        if (Build.VERSION.SDK_INT < 29) {
              method.invoke(manager, clipData, PACKAGE_NAME);
          } else {
              method.invoke(manager, clipData, PACKAGE_NAME, USER_ID);
 diff --git a/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java b/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java
-index bef6e5d..a310907 100644
+index 227bbc8..8563c11 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java
-@@ -89,7 +89,7 @@ public final class SurfaceControl {
-             try {
-                 // the method signature has changed in Android Q
-                 // <https://github.com/Genymobile/scrcpy/issues/586>
--                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-+                if (Build.VERSION.SDK_INT < 29) {
-                     getBuiltInDisplayMethod = CLASS.getMethod("getBuiltInDisplay", int.class);
-                 } else {
-                     getBuiltInDisplayMethod = CLASS.getMethod("getInternalDisplayToken");
-@@ -107,7 +107,7 @@ public final class SurfaceControl {
-             return null;
-         }
+@@ -88,7 +88,7 @@ public final class SurfaceControl {
+         if (getBuiltInDisplayMethod == null) {
+             // the method signature has changed in Android Q
+             // <https://github.com/Genymobile/scrcpy/issues/586>
+-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
++            if (Build.VERSION.SDK_INT < 29) {
+                 getBuiltInDisplayMethod = CLASS.getMethod("getBuiltInDisplay", int.class);
+             } else {
+                 getBuiltInDisplayMethod = CLASS.getMethod("getInternalDisplayToken");
+@@ -101,7 +101,7 @@ public final class SurfaceControl {
+ 
          try {
+             Method method = getGetBuiltInDisplayMethod();
 -            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
 +            if (Build.VERSION.SDK_INT < 29) {
                  // call getBuiltInDisplay(0)
                  return (IBinder) method.invoke(null, 0);
              }
 -- 
-2.24.0
+2.24.1
 
