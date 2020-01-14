@@ -40,7 +40,7 @@ Install the required packages from your package manager.
 
 ```bash
 # runtime dependencies
-sudo apt install ffmpeg libsdl2-2.0-0
+sudo apt install ffmpeg libsdl2-2.0-0 adb
 
 # client build dependencies
 sudo apt install gcc git pkg-config meson ninja-build \
@@ -233,10 +233,10 @@ You can then [run](README.md#run) _scrcpy_.
 
 ## Prebuilt server
 
- - [`scrcpy-server-v1.10.jar`][direct-scrcpy-server]  
-   _(SHA-256: cbeb1a4e046f1392c1dc73c3ccffd7f86dec4636b505556ea20929687a119390)_
+ - [`scrcpy-server-v1.12`][direct-scrcpy-server]  
+   _(SHA-256: b6595262c230e9773fdb817257abcc8c6e6e00f15b1c32b6a850ccfd8176dc10)_
 
-[direct-scrcpy-server]: https://github.com/Genymobile/scrcpy/releases/download/v1.10/scrcpy-server-v1.10.jar
+[direct-scrcpy-server]: https://github.com/Genymobile/scrcpy/releases/download/v1.12/scrcpy-server-v1.12
 
 Download the prebuilt server somewhere, and specify its path during the Meson
 configuration:

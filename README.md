@@ -1,4 +1,4 @@
-# scrcpy (v1.10)
+# scrcpy (v1.12)
 
 This application provides display and control of Android devices connected on
 USB (or [over TCP/IP][article-tcpip]). It does not require any _root_ access.
@@ -62,13 +62,13 @@ For Gentoo, an [Ebuild] is available: [`scrcpy/`][ebuild-link].
 For Windows, for simplicity, prebuilt archives with all the dependencies
 (including `adb`) are available:
 
- - [`scrcpy-win32-v1.10.zip`][direct-win32]  
-   _(SHA-256: f98b400b3764404b33b212e9762dd6f1593ddb766c1480fc2609c94768e4a8e1)_
- - [`scrcpy-win64-v1.10.zip`][direct-win64]  
-   _(SHA-256: 95de34575d873c7e95dfcfb5e74d0f6af4f70b2a5bc6fde0f48d1a05480e3a44)_
+ - [`scrcpy-win32-v1.12.zip`][direct-win32]  
+   _(SHA-256: b2c8c4a3899c037cf448a2102906775114826ba646ce1b847826925103fa801d)_
+ - [`scrcpy-win64-v1.12.zip`][direct-win64]  
+   _(SHA-256: 7d47983b426f7287de0230b88975dc17c1d9c343fa61a93ff2af78b6e9ef5c8c)_
 
-[direct-win32]: https://github.com/Genymobile/scrcpy/releases/download/v1.10/scrcpy-win32-v1.10.zip
-[direct-win64]: https://github.com/Genymobile/scrcpy/releases/download/v1.10/scrcpy-win64-v1.10.zip
+[direct-win32]: https://github.com/Genymobile/scrcpy/releases/download/v1.12/scrcpy-win32-v1.12.zip
+[direct-win64]: https://github.com/Genymobile/scrcpy/releases/download/v1.12/scrcpy-win64-v1.12.zip
 
 You can also [build the app manually][BUILD].
 
@@ -343,6 +343,13 @@ Note that it only shows _physical_ touches (with the finger on the device).
 
 ### Input control
 
+#### Rotate device screen
+
+Press `Ctrl`+`r` to switch between portrait and landscape modes.
+
+Note that it rotates only if the application in foreground supports the
+requested orientation.
+
 #### Copy-paste
 
 It is possible to synchronize clipboards between the computer and the device, in
@@ -425,6 +432,7 @@ Also see [issue #14].
  | Click on `POWER`                       | `Ctrl`+`p`                    | `Cmd`+`p`
  | Power on                               | _Right-click²_                | _Right-click²_
  | Turn device screen off (keep mirroring)| `Ctrl`+`o`                    | `Cmd`+`o`
+ | Rotate device screen                   | `Ctrl`+`r`                    | `Cmd`+`r`
  | Expand notification panel              | `Ctrl`+`n`                    | `Cmd`+`n`
  | Collapse notification panel            | `Ctrl`+`Shift`+`n`            | `Cmd`+`Shift`+`n`
  | Copy device clipboard to computer      | `Ctrl`+`c`                    | `Cmd`+`c`
