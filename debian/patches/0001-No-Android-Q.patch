@@ -1,36 +1,49 @@
-From 408564d1a3de0a0085f4594e451f508d65e489a8 Mon Sep 17 00:00:00 2001
-From: yangfl <yangfl@users.noreply.github.com>
-Date: Thu, 16 Jan 2020 01:13:22 +0800
-Subject: [PATCH] No Android Q
-
-The SDK 23 in Debian does not have 29 defined, so replace it with hard-coded
-constant.
----
- .../main/java/com/genymobile/scrcpy/ScreenEncoder.java    | 4 ++--
- .../com/genymobile/scrcpy/wrappers/ClipboardManager.java  | 8 ++++----
- .../com/genymobile/scrcpy/wrappers/SurfaceControl.java    | 4 ++--
- 3 files changed, 8 insertions(+), 8 deletions(-)
-
-diff --git a/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java b/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
-index c9a37f8..36b91de 100644
---- a/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
-+++ b/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
-@@ -150,8 +150,8 @@ public class ScreenEncoder implements Device.RotationListener {
-         // display the very first frame, and recover from bad quality when no new frames
-         format.setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, REPEAT_FRAME_DELAY_US); // µs
-         if (maxFps > 0) {
--            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
--                format.setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, maxFps);
-+            if (Build.VERSION.SDK_INT >= 29) {
-+                format.setFloat("max-fps-to-encoder", maxFps);
-             } else {
-                 Ln.w("Max FPS is only supported since Android 10, the option has been ignored");
-             }
+diff --git a/server/build_without_gradle.sh b/server/build_without_gradle.sh
+index f688970..4d3aae6 100755
+--- a/server/build_without_gradle.sh
++++ b/server/build_without_gradle.sh
+@@ -42,6 +42,8 @@ echo "Generating java from aidl..."
+ cd "$SERVER_DIR/src/main/aidl"
+ "$ANDROID_HOME/build-tools/$BUILD_TOOLS/aidl" -o"$CLASSES_DIR" \
+     android/view/IRotationWatcher.aidl
++"$ANDROID_HOME/build-tools/$BUILD_TOOLS/aidl" -o"$CLASSES_DIR" \
++    android/content/IOnPrimaryClipChangedListener.aidl
+ 
+ echo "Compiling java sources..."
+ cd ../java
+diff --git a/server/src/main/java/com/genymobile/scrcpy/Controller.java b/server/src/main/java/com/genymobile/scrcpy/Controller.java
+index 960c6a6..bea78ba 100644
+--- a/server/src/main/java/com/genymobile/scrcpy/Controller.java
++++ b/server/src/main/java/com/genymobile/scrcpy/Controller.java
+@@ -236,8 +236,8 @@ public class Controller {
+         }
+ 
+         // On Android >= 7, also press the PASTE key if requested
+-        if (paste && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && device.supportsInputEvents()) {
+-            device.injectKeycode(KeyEvent.KEYCODE_PASTE);
++        if (paste && Build.VERSION.SDK_INT >= 24 && device.supportsInputEvents()) {
++            device.injectKeycode(279);
+         }
+ 
+         return ok;
+diff --git a/server/src/main/java/com/genymobile/scrcpy/Device.java b/server/src/main/java/com/genymobile/scrcpy/Device.java
+index 349486c..ab6e3bd 100644
+--- a/server/src/main/java/com/genymobile/scrcpy/Device.java
++++ b/server/src/main/java/com/genymobile/scrcpy/Device.java
+@@ -104,7 +104,7 @@ public final class Device {
+         }
+ 
+         // main display or any display on Android >= Q
+-        supportsInputEvents = displayId == 0 || Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q;
++        supportsInputEvents = displayId == 0 || Build.VERSION.SDK_INT >= 29;
+         if (!supportsInputEvents) {
+             Ln.w("Input events are not supported for secondary displays before Android 10");
+         }
 diff --git a/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java b/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
-index 592bdf6..523012a 100644
+index e25b6e9..9566de6 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
-@@ -24,7 +24,7 @@ public class ClipboardManager {
+@@ -22,7 +22,7 @@ public class ClipboardManager {
  
      private Method getGetPrimaryClipMethod() throws NoSuchMethodException {
          if (getPrimaryClipMethod == null) {
@@ -39,7 +52,7 @@ index 592bdf6..523012a 100644
                  getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class);
              } else {
                  getPrimaryClipMethod = manager.getClass().getMethod("getPrimaryClip", String.class, int.class);
-@@ -35,7 +35,7 @@ public class ClipboardManager {
+@@ -33,7 +33,7 @@ public class ClipboardManager {
  
      private Method getSetPrimaryClipMethod() throws NoSuchMethodException {
          if (setPrimaryClipMethod == null) {
@@ -48,26 +61,44 @@ index 592bdf6..523012a 100644
                  setPrimaryClipMethod = manager.getClass().getMethod("setPrimaryClip", ClipData.class, String.class);
              } else {
                  setPrimaryClipMethod = manager.getClass().getMethod("setPrimaryClip", ClipData.class, String.class, int.class);
-@@ -45,7 +45,7 @@ public class ClipboardManager {
+@@ -43,7 +43,7 @@ public class ClipboardManager {
      }
  
      private static ClipData getPrimaryClip(Method method, IInterface manager) throws InvocationTargetException, IllegalAccessException {
 -        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
 +        if (Build.VERSION.SDK_INT < 29) {
-             return (ClipData) method.invoke(manager, PACKAGE_NAME);
+             return (ClipData) method.invoke(manager, ServiceManager.PACKAGE_NAME);
          }
-         return (ClipData) method.invoke(manager, PACKAGE_NAME, USER_ID);
-@@ -53,7 +53,7 @@ public class ClipboardManager {
+         return (ClipData) method.invoke(manager, ServiceManager.PACKAGE_NAME, ServiceManager.USER_ID);
+@@ -51,7 +51,7 @@ public class ClipboardManager {
  
      private static void setPrimaryClip(Method method, IInterface manager, ClipData clipData)
              throws InvocationTargetException, IllegalAccessException {
 -        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
 +        if (Build.VERSION.SDK_INT < 29) {
-             method.invoke(manager, clipData, PACKAGE_NAME);
+             method.invoke(manager, clipData, ServiceManager.PACKAGE_NAME);
          } else {
-             method.invoke(manager, clipData, PACKAGE_NAME, USER_ID);
+             method.invoke(manager, clipData, ServiceManager.PACKAGE_NAME, ServiceManager.USER_ID);
+@@ -86,7 +86,7 @@ public class ClipboardManager {
+ 
+     private static void addPrimaryClipChangedListener(Method method, IInterface manager, IOnPrimaryClipChangedListener listener)
+             throws InvocationTargetException, IllegalAccessException {
+-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
++        if (Build.VERSION.SDK_INT < 29) {
+             method.invoke(manager, listener, ServiceManager.PACKAGE_NAME);
+         } else {
+             method.invoke(manager, listener, ServiceManager.PACKAGE_NAME, ServiceManager.USER_ID);
+@@ -95,7 +95,7 @@ public class ClipboardManager {
+ 
+     private Method getAddPrimaryClipChangedListener() throws NoSuchMethodException {
+         if (addPrimaryClipChangedListener == null) {
+-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
++            if (Build.VERSION.SDK_INT < 29) {
+                 addPrimaryClipChangedListener = manager.getClass()
+                         .getMethod("addPrimaryClipChangedListener", IOnPrimaryClipChangedListener.class, String.class);
+             } else {
 diff --git a/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java b/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java
-index 227bbc8..8563c11 100644
+index 8fbb860..de09834 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java
 @@ -88,7 +88,7 @@ public final class SurfaceControl {
@@ -88,6 +119,3 @@ index 227bbc8..8563c11 100644
                  // call getBuiltInDisplay(0)
                  return (IBinder) method.invoke(null, 0);
              }
--- 
-2.24.1
-

@@ -42,7 +42,8 @@ override_dh_auto_build-indep:
 	# dirty hack for reproducible jar build
 	cd build_manual; \
 		unzip scrcpy-server; \
-		touch -t $$(date --date="@${SOURCE_DATE_EPOCH}" +%Y%m%d%H%M.%S) * */*; \
-		chmod 644 * */*; \
+		touch -t $$(date --date="@${SOURCE_DATE_EPOCH}" +%Y%m%d%H%M.%S) META-INF META-INF/MANIFEST.MF classes.dex; \
+		chmod 755 META-INF; \
+		chmod 644 META-INF/MANIFEST.MF classes.dex; \
 		TZ=UTC zip -X scrcpy-server.zip META-INF/MANIFEST.MF classes.dex; \
 		mv scrcpy-server.zip scrcpy-server

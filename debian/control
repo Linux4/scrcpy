@@ -3,7 +3,7 @@ Section: net
 Priority: optional
 Maintainer: Yangfl <mmyangfl@gmail.com>
 Build-Depends:
- debhelper-compat (= 12),
+ debhelper-compat (= 13),
 Build-Depends-Arch:
  meson,
  libavcodec-dev,
@@ -17,7 +17,7 @@ Build-Depends-Indep:
  unzip,
  zip,
 Rules-Requires-Root: no
-Standards-Version: 4.4.1
+Standards-Version: 4.5.0
 Homepage: https://github.com/Genymobile/scrcpy
 Vcs-Git: https://salsa.debian.org/yangfl-guest/scrcpy.git
 Vcs-Browser: https://salsa.debian.org/yangfl-guest/scrcpy
