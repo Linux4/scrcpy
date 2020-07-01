@@ -8,6 +8,22 @@ case, use the [prebuilt server] (so you will not need Java or the Android SDK).
 
 [prebuilt server]: #prebuilt-server
 
+## Branches
+
+### `master`
+
+The `master` branch concerns the latest release, and is the home page of the
+project on Github.
+
+
+### `dev`
+
+`dev` is the current development branch. Every commit present in `dev` will be
+in the next release.
+
+If you want to contribute code, please base your commits on the latest `dev`
+branch.
+
 
 ## Requirements
 
@@ -233,10 +249,10 @@ You can then [run](README.md#run) _scrcpy_.
 
 ## Prebuilt server
 
- - [`scrcpy-server-v1.12`][direct-scrcpy-server]  
-   _(SHA-256: b6595262c230e9773fdb817257abcc8c6e6e00f15b1c32b6a850ccfd8176dc10)_
+ - [`scrcpy-server-v1.13`][direct-scrcpy-server]  
+   _(SHA-256: 5fee64ca1ccdc2f38550f31f5353c66de3de30c2e929a964e30fa2d005d5f885)_
 
-[direct-scrcpy-server]: https://github.com/Genymobile/scrcpy/releases/download/v1.12/scrcpy-server-v1.12
+[direct-scrcpy-server]: https://github.com/Genymobile/scrcpy/releases/download/v1.13/scrcpy-server-v1.13
 
 Download the prebuilt server somewhere, and specify its path during the Meson
 configuration:
@@ -247,3 +263,6 @@ meson x --buildtype release --strip -Db_lto=true \
 ninja -Cx
 sudo ninja -Cx install
 ```
+
+The server only works with a matching client version (this server works with the
+`master` branch).
