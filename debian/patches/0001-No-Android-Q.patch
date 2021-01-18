@@ -1,21 +1,8 @@
-diff --git a/server/build_without_gradle.sh b/server/build_without_gradle.sh
-index f688970..4d3aae6 100755
---- a/server/build_without_gradle.sh
-+++ b/server/build_without_gradle.sh
-@@ -42,6 +42,8 @@ echo "Generating java from aidl..."
- cd "$SERVER_DIR/src/main/aidl"
- "$ANDROID_HOME/build-tools/$BUILD_TOOLS/aidl" -o"$CLASSES_DIR" \
-     android/view/IRotationWatcher.aidl
-+"$ANDROID_HOME/build-tools/$BUILD_TOOLS/aidl" -o"$CLASSES_DIR" \
-+    android/content/IOnPrimaryClipChangedListener.aidl
- 
- echo "Compiling java sources..."
- cd ../java
 diff --git a/server/src/main/java/com/genymobile/scrcpy/Controller.java b/server/src/main/java/com/genymobile/scrcpy/Controller.java
-index 960c6a6..bea78ba 100644
+index 8478023..c457ff9 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/Controller.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/Controller.java
-@@ -236,8 +236,8 @@ public class Controller {
+@@ -266,8 +266,8 @@ public class Controller {
          }
  
          // On Android >= 7, also press the PASTE key if requested
@@ -27,10 +14,10 @@ index 960c6a6..bea78ba 100644
  
          return ok;
 diff --git a/server/src/main/java/com/genymobile/scrcpy/Device.java b/server/src/main/java/com/genymobile/scrcpy/Device.java
-index 349486c..ab6e3bd 100644
+index a8fdf67..154f9d1 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/Device.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/Device.java
-@@ -104,7 +104,7 @@ public final class Device {
+@@ -110,7 +110,7 @@ public final class Device {
          }
  
          // main display or any display on Android >= Q
