@@ -1,23 +1,23 @@
 diff --git a/server/src/main/java/com/genymobile/scrcpy/Controller.java b/server/src/main/java/com/genymobile/scrcpy/Controller.java
-index 8478023..c457ff9 100644
+index 45882bb..2f0b238 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/Controller.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/Controller.java
-@@ -266,8 +266,8 @@ public class Controller {
+@@ -283,8 +283,8 @@ public class Controller {
          }
  
          // On Android >= 7, also press the PASTE key if requested
 -        if (paste && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && device.supportsInputEvents()) {
--            device.injectKeycode(KeyEvent.KEYCODE_PASTE);
+-            device.pressReleaseKeycode(KeyEvent.KEYCODE_PASTE);
 +        if (paste && Build.VERSION.SDK_INT >= 24 && device.supportsInputEvents()) {
-+            device.injectKeycode(279);
++            device.pressReleaseKeycode(279);
          }
  
          return ok;
 diff --git a/server/src/main/java/com/genymobile/scrcpy/Device.java b/server/src/main/java/com/genymobile/scrcpy/Device.java
-index a8fdf67..154f9d1 100644
+index 3e71fe9..5f4bc30 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/Device.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/Device.java
-@@ -110,7 +110,7 @@ public final class Device {
+@@ -113,7 +113,7 @@ public final class Device {
          }
  
          // main display or any display on Android >= Q
@@ -26,6 +26,28 @@ index a8fdf67..154f9d1 100644
          if (!supportsInputEvents) {
              Ln.w("Input events are not supported for secondary displays before Android 10");
          }
+@@ -157,7 +157,7 @@ public final class Device {
+     }
+ 
+     public static boolean supportsInputEvents(int displayId) {
+-        return displayId == 0 || Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q;
++        return displayId == 0 || Build.VERSION.SDK_INT >= 29;
+     }
+ 
+     public boolean supportsInputEvents() {
+diff --git a/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java b/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
+index 2f7109c..a0f615f 100644
+--- a/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
++++ b/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
+@@ -228,7 +228,7 @@ public class ScreenEncoder implements Device.RotationListener {
+     private static IBinder createDisplay() {
+         // Since Android 12 (preview), secure displays could not be created with shell permissions anymore.
+         // On Android 12 preview, SDK_INT is still R (not S), but CODENAME is "S".
+-        boolean secure = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && !"S"
++        boolean secure = Build.VERSION.SDK_INT < 30 || (Build.VERSION.SDK_INT == 30 && !"S"
+                 .equals(Build.VERSION.CODENAME));
+         return SurfaceControl.createDisplay("scrcpy", secure);
+     }
 diff --git a/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java b/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
 index e25b6e9..9566de6 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
