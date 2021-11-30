@@ -1,3 +1,9 @@
+scrcpy (1.21-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Yangfl <mmyangfl@gmail.com>  Wed, 01 Dec 2021 04:36:41 +0800
+
 scrcpy (1.19-1) unstable; urgency=medium
 
   * New upstream release (Closes: #995295)
