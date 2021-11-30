@@ -41,6 +41,12 @@ enum screen_power_mode {
     SCREEN_POWER_MODE_NORMAL = 2,
 };
 
+enum get_clipboard_copy_key {
+    GET_CLIPBOARD_COPY_KEY_NONE,
+    GET_CLIPBOARD_COPY_KEY_COPY,
+    GET_CLIPBOARD_COPY_KEY_CUT,
+};
+
 struct control_msg {
     enum control_msg_type type;
     union {
@@ -57,11 +63,11 @@ struct control_msg {
             enum android_motionevent_action action;
             enum android_motionevent_buttons buttons;
             uint64_t pointer_id;
-            struct position position;
+            struct sc_position position;
             float pressure;
         } inject_touch_event;
         struct {
-            struct position position;
+            struct sc_position position;
             int32_t hscroll;
             int32_t vscroll;
         } inject_scroll_event;
@@ -70,6 +76,10 @@ struct control_msg {
             // screen may only be turned on on ACTION_DOWN
         } back_or_screen_on;
         struct {
+            enum get_clipboard_copy_key copy_key;
+        } get_clipboard;
+        struct {
+            uint64_t sequence;
             char *text; // owned, to be freed by free()
             bool paste;
         } set_clipboard;

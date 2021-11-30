@@ -7,6 +7,7 @@
 
 #include "control_msg.h"
 #include "receiver.h"
+#include "util/acksync.h"
 #include "util/cbuf.h"
 #include "util/net.h"
 #include "util/thread.h"
@@ -14,7 +15,7 @@
 struct control_msg_queue CBUF(struct control_msg, 64);
 
 struct controller {
-    socket_t control_socket;
+    sc_socket control_socket;
     sc_thread thread;
     sc_mutex mutex;
     sc_cond msg_cond;
@@ -24,7 +25,8 @@ struct controller {
 };
 
 bool
-controller_init(struct controller *controller, socket_t control_socket);
+controller_init(struct controller *controller, sc_socket control_socket,
+                struct sc_acksync *acksync);
 
 void
 controller_destroy(struct controller *controller);

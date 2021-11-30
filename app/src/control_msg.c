@@ -7,7 +7,7 @@
 
 #include "util/buffer_util.h"
 #include "util/log.h"
-#include "util/str_util.h"
+#include "util/str.h"
 
 /**
  * Map an enum value to a string based on an array, without crashing on an
@@ -55,8 +55,14 @@ static const char *const screen_power_mode_labels[] = {
     "suspend",
 };
 
+static const char *const copy_key_labels[] = {
+    "none",
+    "copy",
+    "cut",
+};
+
 static void
-write_position(uint8_t *buf, const struct position *position) {
+write_position(uint8_t *buf, const struct sc_position *position) {
     buffer_write32be(&buf[0], position->point.x);
     buffer_write32be(&buf[4], position->point.y);
     buffer_write16be(&buf[8], position->screen_size.width);
@@ -66,7 +72,7 @@ write_position(uint8_t *buf, const struct position *position) {
 // write length (2 bytes) + string (non nul-terminated)
 static size_t
 write_string(const char *utf8, size_t max_len, unsigned char *buf) {
-    size_t len = utf8_truncation_index(utf8, max_len);
+    size_t len = sc_str_utf8_truncation_index(utf8, max_len);
     buffer_write32be(buf, len);
     memcpy(&buf[4], utf8, len);
     return 4 + len;
@@ -117,12 +123,16 @@ control_msg_serialize(const struct control_msg *msg, unsigned char *buf) {
         case CONTROL_MSG_TYPE_BACK_OR_SCREEN_ON:
             buf[1] = msg->inject_keycode.action;
             return 2;
+        case CONTROL_MSG_TYPE_GET_CLIPBOARD:
+            buf[1] = msg->get_clipboard.copy_key;
+            return 2;
         case CONTROL_MSG_TYPE_SET_CLIPBOARD: {
-            buf[1] = !!msg->set_clipboard.paste;
+            buffer_write64be(&buf[1], msg->set_clipboard.sequence);
+            buf[9] = !!msg->set_clipboard.paste;
             size_t len = write_string(msg->set_clipboard.text,
                                       CONTROL_MSG_CLIPBOARD_TEXT_MAX_LENGTH,
-                                      &buf[2]);
-            return 2 + len;
+                                      &buf[10]);
+            return 10 + len;
         }
         case CONTROL_MSG_TYPE_SET_SCREEN_POWER_MODE:
             buf[1] = msg->set_screen_power_mode.mode;
@@ -130,7 +140,6 @@ control_msg_serialize(const struct control_msg *msg, unsigned char *buf) {
         case CONTROL_MSG_TYPE_EXPAND_NOTIFICATION_PANEL:
         case CONTROL_MSG_TYPE_EXPAND_SETTINGS_PANEL:
         case CONTROL_MSG_TYPE_COLLAPSE_PANELS:
-        case CONTROL_MSG_TYPE_GET_CLIPBOARD:
         case CONTROL_MSG_TYPE_ROTATE_DEVICE:
             // no additional data
             return 1;
@@ -170,11 +179,6 @@ control_msg_log(const struct control_msg *msg) {
                          (long) msg->inject_touch_event.buttons);
             } else {
                 // numeric pointer id
-#ifndef __WIN32
-# define PRIu64_ PRIu64
-#else
-# define PRIu64_ "I64u"  // Windows...
-#endif
                 LOG_CMSG("touch [id=%" PRIu64_ "] %-4s position=%" PRIi32 ",%"
                              PRIi32 " pressure=%g buttons=%06lx",
                          id,
@@ -198,9 +202,14 @@ control_msg_log(const struct control_msg *msg) {
             LOG_CMSG("back-or-screen-on %s",
                      KEYEVENT_ACTION_LABEL(msg->inject_keycode.action));
             break;
+        case CONTROL_MSG_TYPE_GET_CLIPBOARD:
+            LOG_CMSG("get clipboard copy_key=%s",
+                     copy_key_labels[msg->get_clipboard.copy_key]);
+            break;
         case CONTROL_MSG_TYPE_SET_CLIPBOARD:
-            LOG_CMSG("clipboard %s \"%s\"",
-                     msg->set_clipboard.paste ? "paste" : "copy",
+            LOG_CMSG("clipboard %" PRIu64_ " %s \"%s\"",
+                     msg->set_clipboard.sequence,
+                     msg->set_clipboard.paste ? "paste" : "nopaste",
                      msg->set_clipboard.text);
             break;
         case CONTROL_MSG_TYPE_SET_SCREEN_POWER_MODE:
@@ -215,9 +224,6 @@ control_msg_log(const struct control_msg *msg) {
             break;
         case CONTROL_MSG_TYPE_COLLAPSE_PANELS:
             LOG_CMSG("collapse panels");
-            break;
-        case CONTROL_MSG_TYPE_GET_CLIPBOARD:
-            LOG_CMSG("get clipboard");
             break;
         case CONTROL_MSG_TYPE_ROTATE_DEVICE:
             LOG_CMSG("rotate device");

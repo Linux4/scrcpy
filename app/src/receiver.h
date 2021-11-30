@@ -5,19 +5,23 @@
 
 #include <stdbool.h>
 
+#include "util/acksync.h"
 #include "util/net.h"
 #include "util/thread.h"
 
 // receive events from the device
 // managed by the controller
 struct receiver {
-    socket_t control_socket;
+    sc_socket control_socket;
     sc_thread thread;
     sc_mutex mutex;
+
+    struct sc_acksync *acksync;
 };
 
 bool
-receiver_init(struct receiver *receiver, socket_t control_socket);
+receiver_init(struct receiver *receiver, sc_socket control_socket,
+              struct sc_acksync *acksync);
 
 void
 receiver_destroy(struct receiver *receiver);

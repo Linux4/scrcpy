@@ -3,7 +3,6 @@
 #include <assert.h>
 #include <SDL2/SDL_keycode.h>
 
-#include "event_converter.h"
 #include "util/log.h"
 
 static const int ACTION_DOWN = 1;
@@ -53,17 +52,21 @@ is_shortcut_mod(struct input_manager *im, uint16_t sdl_mod) {
 
 void
 input_manager_init(struct input_manager *im, struct controller *controller,
-                   struct screen *screen,
+                   struct screen *screen, struct sc_key_processor *kp,
+                   struct sc_mouse_processor *mp,
                    const struct scrcpy_options *options) {
+    assert(!options->control || (kp && kp->ops));
+    assert(!options->control || (mp && mp->ops));
+
     im->controller = controller;
     im->screen = screen;
-    im->repeat = 0;
+    im->kp = kp;
+    im->mp = mp;
 
     im->control = options->control;
-    im->forward_key_repeat = options->forward_key_repeat;
-    im->prefer_text = options->prefer_text;
     im->forward_all_clicks = options->forward_all_clicks;
     im->legacy_paste = options->legacy_paste;
+    im->clipboard_autosync = options->clipboard_autosync;
 
     const struct sc_shortcut_mods *shortcut_mods = &options->shortcut_mods;
     assert(shortcut_mods->count);
@@ -80,6 +83,8 @@ input_manager_init(struct input_manager *im, struct controller *controller,
     im->last_keycode = SDLK_UNKNOWN;
     im->last_mod = 0;
     im->key_repeat = 0;
+
+    im->next_sequence = 1; // 0 is reserved for SC_SEQUENCE_INVALID
 }
 
 static void
@@ -143,16 +148,6 @@ action_menu(struct controller *controller, int actions) {
     send_keycode(controller, AKEYCODE_MENU, actions, "MENU");
 }
 
-static inline void
-action_copy(struct controller *controller, int actions) {
-    send_keycode(controller, AKEYCODE_COPY, actions, "COPY");
-}
-
-static inline void
-action_cut(struct controller *controller, int actions) {
-    send_keycode(controller, AKEYCODE_CUT, actions, "CUT");
-}
-
 // turn the screen on if it was off, press BACK otherwise
 // If the screen is off, it is turned on only on ACTION_DOWN
 static void
@@ -206,35 +201,50 @@ collapse_panels(struct controller *controller) {
     }
 }
 
-static void
-set_device_clipboard(struct controller *controller, bool paste) {
+static bool
+get_device_clipboard(struct controller *controller,
+                     enum get_clipboard_copy_key copy_key) {
+    struct control_msg msg;
+    msg.type = CONTROL_MSG_TYPE_GET_CLIPBOARD;
+    msg.get_clipboard.copy_key = copy_key;
+
+    if (!controller_push_msg(controller, &msg)) {
+        LOGW("Could not request 'get device clipboard'");
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+set_device_clipboard(struct controller *controller, bool paste,
+                     uint64_t sequence) {
     char *text = SDL_GetClipboardText();
     if (!text) {
         LOGW("Could not get clipboard text: %s", SDL_GetError());
-        return;
-    }
-    if (!*text) {
-        // empty text
-        SDL_free(text);
-        return;
+        return false;
     }
 
     char *text_dup = strdup(text);
     SDL_free(text);
     if (!text_dup) {
         LOGW("Could not strdup input text");
-        return;
+        return false;
     }
 
     struct control_msg msg;
     msg.type = CONTROL_MSG_TYPE_SET_CLIPBOARD;
+    msg.set_clipboard.sequence = sequence;
     msg.set_clipboard.text = text_dup;
     msg.set_clipboard.paste = paste;
 
     if (!controller_push_msg(controller, &msg)) {
         free(text_dup);
         LOGW("Could not request 'set device clipboard'");
+        return false;
     }
+
+    return true;
 }
 
 static void
@@ -323,32 +333,14 @@ input_manager_process_text_input(struct input_manager *im,
         // A shortcut must never generate text events
         return;
     }
-    if (!im->prefer_text) {
-        char c = event->text[0];
-        if (isalpha(c) || c == ' ') {
-            assert(event->text[1] == '\0');
-            // letters and space are handled as raw key event
-            return;
-        }
-    }
 
-    struct control_msg msg;
-    msg.type = CONTROL_MSG_TYPE_INJECT_TEXT;
-    msg.inject_text.text = strdup(event->text);
-    if (!msg.inject_text.text) {
-        LOGW("Could not strdup input text");
-        return;
-    }
-    if (!controller_push_msg(im->controller, &msg)) {
-        free(msg.inject_text.text);
-        LOGW("Could not request 'inject text'");
-    }
+    im->kp->ops->process_text(im->kp, event);
 }
 
 static bool
 simulate_virtual_finger(struct input_manager *im,
                         enum android_motionevent_action action,
-                        struct point point) {
+                        struct sc_point point) {
     bool up = action == AMOTION_EVENT_ACTION_UP;
 
     struct control_msg msg;
@@ -368,32 +360,11 @@ simulate_virtual_finger(struct input_manager *im,
     return true;
 }
 
-static struct point
-inverse_point(struct point point, struct size size) {
+static struct sc_point
+inverse_point(struct sc_point point, struct sc_size size) {
     point.x = size.width - point.x;
     point.y = size.height - point.y;
     return point;
-}
-
-static bool
-convert_input_key(const SDL_KeyboardEvent *from, struct control_msg *to,
-                  bool prefer_text, uint32_t repeat) {
-    to->type = CONTROL_MSG_TYPE_INJECT_KEYCODE;
-
-    if (!convert_keycode_action(from->type, &to->inject_keycode.action)) {
-        return false;
-    }
-
-    uint16_t mod = from->keysym.mod;
-    if (!convert_keycode(from->keysym.sym, &to->inject_keycode.keycode, mod,
-                         prefer_text)) {
-        return false;
-    }
-
-    to->inject_keycode.repeat = repeat;
-    to->inject_keycode.metastate = convert_meta_state(mod);
-
-    return true;
 }
 
 static void
@@ -484,13 +455,15 @@ input_manager_process_key(struct input_manager *im,
                 }
                 return;
             case SDLK_c:
-                if (control && !shift && !repeat) {
-                    action_copy(controller, action);
+                if (control && !shift && !repeat && down) {
+                    get_device_clipboard(controller,
+                                         GET_CLIPBOARD_COPY_KEY_COPY);
                 }
                 return;
             case SDLK_x:
-                if (control && !shift && !repeat) {
-                    action_cut(controller, action);
+                if (control && !shift && !repeat && down) {
+                    get_device_clipboard(controller,
+                                         GET_CLIPBOARD_COPY_KEY_CUT);
                 }
                 return;
             case SDLK_v:
@@ -499,8 +472,10 @@ input_manager_process_key(struct input_manager *im,
                         // inject the text as input events
                         clipboard_paste(controller);
                     } else {
-                        // store the text in the device clipboard and paste
-                        set_device_clipboard(controller, true);
+                        // store the text in the device clipboard and paste,
+                        // without requesting an acknowledgment
+                        set_device_clipboard(controller, true,
+                                             SC_SEQUENCE_INVALID);
                     }
                 }
                 return;
@@ -549,47 +524,36 @@ input_manager_process_key(struct input_manager *im,
         return;
     }
 
-    if (event->repeat) {
-        if (!im->forward_key_repeat) {
-            return;
-        }
-        ++im->repeat;
-    } else {
-        im->repeat = 0;
-    }
-
-    if (ctrl && !shift && keycode == SDLK_v && down && !repeat) {
+    uint64_t ack_to_wait = SC_SEQUENCE_INVALID;
+    bool is_ctrl_v = ctrl && !shift && keycode == SDLK_v && down && !repeat;
+    if (im->clipboard_autosync && is_ctrl_v) {
         if (im->legacy_paste) {
             // inject the text as input events
             clipboard_paste(controller);
             return;
         }
+
+        // Request an acknowledgement only if necessary
+        uint64_t sequence = im->kp->async_paste ? im->next_sequence
+                                                : SC_SEQUENCE_INVALID;
+
         // Synchronize the computer clipboard to the device clipboard before
         // sending Ctrl+v, to allow seamless copy-paste.
-        set_device_clipboard(controller, false);
-    }
+        bool ok = set_device_clipboard(controller, false, sequence);
+        if (!ok) {
+            LOGW("Clipboard could not be synchronized, Ctrl+v not injected");
+            return;
+        }
 
-    struct control_msg msg;
-    if (convert_input_key(event, &msg, im->prefer_text, im->repeat)) {
-        if (!controller_push_msg(controller, &msg)) {
-            LOGW("Could not request 'inject keycode'");
+        if (im->kp->async_paste) {
+            // The key processor must wait for this ack before injecting Ctrl+v
+            ack_to_wait = sequence;
+            // Increment only when the request succeeded
+            ++im->next_sequence;
         }
     }
-}
 
-static bool
-convert_mouse_motion(const SDL_MouseMotionEvent *from, struct screen *screen,
-                     struct control_msg *to) {
-    to->type = CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT;
-    to->inject_touch_event.action = AMOTION_EVENT_ACTION_MOVE;
-    to->inject_touch_event.pointer_id = POINTER_ID_MOUSE;
-    to->inject_touch_event.position.screen_size = screen->frame_size;
-    to->inject_touch_event.position.point =
-        screen_convert_window_to_frame_coords(screen, from->x, from->y);
-    to->inject_touch_event.pressure = 1.f;
-    to->inject_touch_event.buttons = convert_mouse_buttons(from->state);
-
-    return true;
+    im->kp->ops->process_key(im->kp, event, ack_to_wait);
 }
 
 static void
@@ -607,79 +571,22 @@ input_manager_process_mouse_motion(struct input_manager *im,
         // simulated from touch events, so it's a duplicate
         return;
     }
-    struct control_msg msg;
-    if (!convert_mouse_motion(event, im->screen, &msg)) {
-        return;
-    }
 
-    if (!controller_push_msg(im->controller, &msg)) {
-        LOGW("Could not request 'inject mouse motion event'");
-    }
+    im->mp->ops->process_mouse_motion(im->mp, event);
 
     if (im->vfinger_down) {
-        struct point mouse = msg.inject_touch_event.position.point;
-        struct point vfinger = inverse_point(mouse, im->screen->frame_size);
+        struct sc_point mouse =
+            screen_convert_window_to_frame_coords(im->screen, event->x,
+                                                  event->y);
+        struct sc_point vfinger = inverse_point(mouse, im->screen->frame_size);
         simulate_virtual_finger(im, AMOTION_EVENT_ACTION_MOVE, vfinger);
     }
-}
-
-static bool
-convert_touch(const SDL_TouchFingerEvent *from, struct screen *screen,
-              struct control_msg *to) {
-    to->type = CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT;
-
-    if (!convert_touch_action(from->type, &to->inject_touch_event.action)) {
-        return false;
-    }
-
-    to->inject_touch_event.pointer_id = from->fingerId;
-    to->inject_touch_event.position.screen_size = screen->frame_size;
-
-    int dw;
-    int dh;
-    SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
-
-    // SDL touch event coordinates are normalized in the range [0; 1]
-    int32_t x = from->x * dw;
-    int32_t y = from->y * dh;
-    to->inject_touch_event.position.point =
-        screen_convert_drawable_to_frame_coords(screen, x, y);
-
-    to->inject_touch_event.pressure = from->pressure;
-    to->inject_touch_event.buttons = 0;
-    return true;
 }
 
 static void
 input_manager_process_touch(struct input_manager *im,
                             const SDL_TouchFingerEvent *event) {
-    struct control_msg msg;
-    if (convert_touch(event, im->screen, &msg)) {
-        if (!controller_push_msg(im->controller, &msg)) {
-            LOGW("Could not request 'inject touch event'");
-        }
-    }
-}
-
-static bool
-convert_mouse_button(const SDL_MouseButtonEvent *from, struct screen *screen,
-                     struct control_msg *to) {
-    to->type = CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT;
-
-    if (!convert_mouse_action(from->type, &to->inject_touch_event.action)) {
-        return false;
-    }
-
-    to->inject_touch_event.pointer_id = POINTER_ID_MOUSE;
-    to->inject_touch_event.position.screen_size = screen->frame_size;
-    to->inject_touch_event.position.point =
-        screen_convert_window_to_frame_coords(screen, from->x, from->y);
-    to->inject_touch_event.pressure =
-        from->type == SDL_MOUSEBUTTONDOWN ? 1.f : 0.f;
-    to->inject_touch_event.buttons =
-        convert_mouse_buttons(SDL_BUTTON(from->button));
-
-    return true;
+    im->mp->ops->process_touch(im->mp, event);
 }
 
 static void
@@ -739,15 +646,7 @@ input_manager_process_mouse_button(struct input_manager *im,
         return;
     }
 
-    struct control_msg msg;
-    if (!convert_mouse_button(event, im->screen, &msg)) {
-        return;
-    }
-
-    if (!controller_push_msg(im->controller, &msg)) {
-        LOGW("Could not request 'inject mouse button event'");
-        return;
-    }
+    im->mp->ops->process_mouse_button(im->mp, event);
 
     // Pinch-to-zoom simulation.
     //
@@ -761,8 +660,10 @@ input_manager_process_mouse_button(struct input_manager *im,
 #define CTRL_PRESSED (SDL_GetModState() & (KMOD_LCTRL | KMOD_RCTRL))
     if ((down && !im->vfinger_down && CTRL_PRESSED)
             || (!down && im->vfinger_down)) {
-        struct point mouse = msg.inject_touch_event.position.point;
-        struct point vfinger = inverse_point(mouse, im->screen->frame_size);
+        struct sc_point mouse =
+            screen_convert_window_to_frame_coords(im->screen, event->x,
+                                                              event->y);
+        struct sc_point vfinger = inverse_point(mouse, im->screen->frame_size);
         enum android_motionevent_action action = down
                                                ? AMOTION_EVENT_ACTION_DOWN
                                                : AMOTION_EVENT_ACTION_UP;
@@ -773,39 +674,10 @@ input_manager_process_mouse_button(struct input_manager *im,
     }
 }
 
-static bool
-convert_mouse_wheel(const SDL_MouseWheelEvent *from, struct screen *screen,
-                    struct control_msg *to) {
-
-    // mouse_x and mouse_y are expressed in pixels relative to the window
-    int mouse_x;
-    int mouse_y;
-    SDL_GetMouseState(&mouse_x, &mouse_y);
-
-    struct position position = {
-        .screen_size = screen->frame_size,
-        .point = screen_convert_window_to_frame_coords(screen,
-                                                       mouse_x, mouse_y),
-    };
-
-    to->type = CONTROL_MSG_TYPE_INJECT_SCROLL_EVENT;
-
-    to->inject_scroll_event.position = position;
-    to->inject_scroll_event.hscroll = from->x;
-    to->inject_scroll_event.vscroll = from->y;
-
-    return true;
-}
-
 static void
 input_manager_process_mouse_wheel(struct input_manager *im,
                                   const SDL_MouseWheelEvent *event) {
-    struct control_msg msg;
-    if (convert_mouse_wheel(event, im->screen, &msg)) {
-        if (!controller_push_msg(im->controller, &msg)) {
-            LOGW("Could not request 'inject mouse wheel event'");
-        }
-    }
+    im->mp->ops->process_mouse_wheel(im->mp, event);
 }
 
 bool

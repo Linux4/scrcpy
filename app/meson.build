@@ -1,6 +1,8 @@
 src = [
     'src/main.c',
     'src/adb.c',
+    'src/adb_parser.c',
+    'src/adb_tunnel.c',
     'src/cli.c',
     'src/clock.c',
     'src/compat.c',
@@ -8,32 +10,59 @@ src = [
     'src/controller.c',
     'src/decoder.c',
     'src/device_msg.c',
-    'src/event_converter.c',
+    'src/icon.c',
     'src/file_handler.c',
     'src/fps_counter.c',
     'src/frame_buffer.c',
     'src/input_manager.c',
+    'src/keyboard_inject.c',
+    'src/mouse_inject.c',
     'src/opengl.c',
+    'src/options.c',
     'src/receiver.c',
     'src/recorder.c',
     'src/scrcpy.c',
     'src/screen.c',
     'src/server.c',
     'src/stream.c',
-    'src/tiny_xpm.c',
     'src/video_buffer.c',
+    'src/util/acksync.c',
+    'src/util/file.c',
+    'src/util/intmap.c',
+    'src/util/intr.c',
     'src/util/log.c',
     'src/util/net.c',
+    'src/util/net_intr.c',
     'src/util/process.c',
-    'src/util/str_util.c',
+    'src/util/process_intr.c',
+    'src/util/strbuf.c',
+    'src/util/str.c',
+    'src/util/term.c',
     'src/util/thread.c',
     'src/util/tick.c',
 ]
 
+conf = configuration_data()
+
+conf.set('_POSIX_C_SOURCE', '200809L')
+conf.set('_XOPEN_SOURCE', '700')
+conf.set('_GNU_SOURCE', true)
+
 if host_machine.system() == 'windows'
-    src += [ 'src/sys/win/process.c' ]
+    src += [
+        'src/sys/win/file.c',
+        'src/sys/win/process.c',
+    ]
+    conf.set('_WIN32_WINNT', '0x0600')
+    conf.set('WINVER', '0x0600')
 else
-    src += [ 'src/sys/unix/process.c' ]
+    src += [
+        'src/sys/unix/file.c',
+        'src/sys/unix/process.c',
+    ]
+    if host_machine.system() == 'darwin'
+        conf.set('_DARWIN_C_SOURCE', true)
+    endif
 endif
 
 v4l2_support = host_machine.system() == 'linux'
@@ -41,9 +70,13 @@ if v4l2_support
     src += [ 'src/v4l2_sink.c' ]
 endif
 
-check_functions = [
-    'strdup'
-]
+aoa_hid_support = host_machine.system() == 'linux'
+if aoa_hid_support
+    src += [
+        'src/aoa_hid.c',
+        'src/hid_keyboard.c',
+    ]
+endif
 
 cc = meson.get_compiler('c')
 
@@ -61,8 +94,11 @@ if not get_option('crossbuild_windows')
         dependencies += dependency('libavdevice')
     endif
 
-else
+    if aoa_hid_support
+        dependencies += dependency('libusb-1.0')
+    endif
 
+else
     # cross-compile mingw32 build (from Linux to Windows)
     prebuilt_sdl2 = meson.get_cross_property('prebuilt_sdl2')
     sdl2_bin_dir = meson.current_source_dir() + '/../prebuilt-deps/' + prebuilt_sdl2 + '/bin'
@@ -102,7 +138,11 @@ if host_machine.system() == 'windows'
     dependencies += cc.find_library('ws2_32')
 endif
 
-conf = configuration_data()
+check_functions = [
+    'strdup',
+    'asprintf',
+    'vasprintf',
+]
 
 foreach f : check_functions
   if cc.has_function(f)
@@ -110,6 +150,9 @@ foreach f : check_functions
     conf.set(define, true)
   endif
 endforeach
+
+conf.set('HAVE_SOCK_CLOEXEC', host_machine.system() != 'windows' and
+                              cc.has_header_symbol('sys/socket.h', 'SOCK_CLOEXEC'))
 
 # the version, updated on release
 conf.set_quoted('SCRCPY_VERSION', meson.project_version())
@@ -139,6 +182,9 @@ conf.set('SERVER_DEBUGGER_METHOD_NEW', get_option('server_debugger_method') == '
 # enable V4L2 support (linux only)
 conf.set('HAVE_V4L2', v4l2_support)
 
+# enable HID over AOA support (linux only)
+conf.set('HAVE_AOA_HID', aoa_hid_support)
+
 configure_file(configuration: conf, output: 'config.h')
 
 src_dir = include_directories('src')
@@ -150,6 +196,9 @@ executable('scrcpy', src,
            c_args: [])
 
 install_man('scrcpy.1')
+install_data('../data/icon.png',
+             rename: 'scrcpy.png',
+             install_dir: 'share/icons/hicolor/256x256/apps')
 
 
 ### TESTS
@@ -157,8 +206,14 @@ install_man('scrcpy.1')
 # do not build tests in release (assertions would not be executed at all)
 if get_option('buildtype') == 'debug'
     tests = [
+        ['test_adb_parser', [
+            'tests/test_adb_parser.c',
+            'src/adb_parser.c',
+            'src/util/str.c',
+            'src/util/strbuf.c',
+        ]],
         ['test_buffer_util', [
-            'tests/test_buffer_util.c'
+            'tests/test_buffer_util.c',
         ]],
         ['test_cbuf', [
             'tests/test_cbuf.c',
@@ -166,7 +221,11 @@ if get_option('buildtype') == 'debug'
         ['test_cli', [
             'tests/test_cli.c',
             'src/cli.c',
-            'src/util/str_util.c',
+            'src/options.c',
+            'src/util/net.c',
+            'src/util/str.c',
+            'src/util/strbuf.c',
+            'src/util/term.c',
         ]],
         ['test_clock', [
             'tests/test_clock.c',
@@ -175,7 +234,8 @@ if get_option('buildtype') == 'debug'
         ['test_control_msg_serialize', [
             'tests/test_control_msg_serialize.c',
             'src/control_msg.c',
-            'src/util/str_util.c',
+            'src/util/str.c',
+            'src/util/strbuf.c',
         ]],
         ['test_device_msg_deserialize', [
             'tests/test_device_msg_deserialize.c',
@@ -184,9 +244,14 @@ if get_option('buildtype') == 'debug'
         ['test_queue', [
             'tests/test_queue.c',
         ]],
-        ['test_strutil', [
-            'tests/test_strutil.c',
-            'src/util/str_util.c',
+        ['test_strbuf', [
+            'tests/test_strbuf.c',
+            'src/util/strbuf.c',
+        ]],
+        ['test_str', [
+            'tests/test_str.c',
+            'src/util/str.c',
+            'src/util/strbuf.c',
         ]],
     ]
 

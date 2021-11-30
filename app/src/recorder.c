@@ -1,10 +1,12 @@
 #include "recorder.h"
 
 #include <assert.h>
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
 #include <libavutil/time.h>
 
 #include "util/log.h"
-#include "util/str_util.h"
+#include "util/str.h"
 
 /** Downcast packet_sink to recorder */
 #define DOWNCAST(SINK) container_of(SINK, struct recorder, packet_sink)
@@ -24,7 +26,7 @@ find_muxer(const char *name) {
         oformat = av_oformat_next(oformat);
 #endif
         // until null or containing the requested name
-    } while (oformat && !strlist_contains(oformat->name, ',', name));
+    } while (oformat && !sc_str_list_contains(oformat->name, ',', name));
     return oformat;
 }
 
@@ -32,11 +34,13 @@ static struct record_packet *
 record_packet_new(const AVPacket *packet) {
     struct record_packet *rec = malloc(sizeof(*rec));
     if (!rec) {
+        LOG_OOM();
         return NULL;
     }
 
     rec->packet = av_packet_alloc();
     if (!rec->packet) {
+        LOG_OOM();
         free(rec);
         return NULL;
     }
@@ -79,7 +83,7 @@ recorder_write_header(struct recorder *recorder, const AVPacket *packet) {
 
     uint8_t *extradata = av_malloc(packet->size * sizeof(uint8_t));
     if (!extradata) {
-        LOGC("Could not allocate extradata");
+        LOG_OOM();
         return false;
     }
 
@@ -226,13 +230,11 @@ static bool
 recorder_open(struct recorder *recorder, const AVCodec *input_codec) {
     bool ok = sc_mutex_init(&recorder->mutex);
     if (!ok) {
-        LOGC("Could not create mutex");
         return false;
     }
 
     ok = sc_cond_init(&recorder->queue_cond);
     if (!ok) {
-        LOGC("Could not create cond");
         goto error_mutex_destroy;
     }
 
@@ -252,7 +254,7 @@ recorder_open(struct recorder *recorder, const AVCodec *input_codec) {
 
     recorder->ctx = avformat_alloc_context();
     if (!recorder->ctx) {
-        LOGE("Could not allocate output context");
+        LOG_OOM();
         goto error_cond_destroy;
     }
 
@@ -336,7 +338,7 @@ recorder_push(struct recorder *recorder, const AVPacket *packet) {
 
     struct record_packet *rec = record_packet_new(packet);
     if (!rec) {
-        LOGC("Could not allocate record packet");
+        LOG_OOM();
         sc_mutex_unlock(&recorder->mutex);
         return false;
     }
@@ -370,10 +372,10 @@ bool
 recorder_init(struct recorder *recorder,
               const char *filename,
               enum sc_record_format format,
-              struct size declared_frame_size) {
+              struct sc_size declared_frame_size) {
     recorder->filename = strdup(filename);
     if (!recorder->filename) {
-        LOGE("Could not strdup filename");
+        LOG_OOM();
         return false;
     }
 

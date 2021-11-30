@@ -1,15 +1,16 @@
 #ifndef COMPAT_H
 #define COMPAT_H
 
-#define _POSIX_C_SOURCE 200809L
-#define _XOPEN_SOURCE 700
-#define _GNU_SOURCE
-#ifdef __APPLE__
-# define _DARWIN_C_SOURCE
-#endif
+#include "config.h"
 
 #include <libavformat/version.h>
 #include <SDL2/SDL_version.h>
+
+#ifndef __WIN32
+# define PRIu64_ PRIu64
+#else
+# define PRIu64_ "I64u"  // Windows...
+#endif
 
 // In ffmpeg/doc/APIchanges:
 // 2018-02-06 - 0694d87024 - lavf 58.9.100 - avformat.h
@@ -43,6 +44,11 @@
 # define SCRCPY_SDL_HAS_WINDOW_ALWAYS_ON_TOP
 #endif
 
+#if SDL_VERSION_ATLEAST(2, 0, 6)
+// <https://github.com/libsdl-org/SDL/commit/d7a318de563125e5bb465b1000d6bc9576fbc6fc>
+# define SCRCPY_SDL_HAS_HINT_TOUCH_MOUSE_EVENTS
+#endif
+
 #if SDL_VERSION_ATLEAST(2, 0, 8)
 // <https://hg.libsdl.org/SDL/rev/dfde5d3f9781>
 # define SCRCPY_SDL_HAS_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR
@@ -50,6 +56,14 @@
 
 #ifndef HAVE_STRDUP
 char *strdup(const char *s);
+#endif
+
+#ifndef HAVE_ASPRINTF
+int asprintf(char **strp, const char *fmt, ...);
+#endif
+
+#ifndef HAVE_VASPRINTF
+int vasprintf(char **strp, const char *fmt, va_list ap);
 #endif
 
 #endif

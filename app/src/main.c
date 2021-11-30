@@ -1,5 +1,3 @@
-#include "scrcpy.h"
-
 #include "common.h"
 
 #include <assert.h>
@@ -13,6 +11,8 @@
 #include <SDL2/SDL.h>
 
 #include "cli.h"
+#include "options.h"
+#include "scrcpy.h"
 #include "util/log.h"
 
 static void
@@ -47,8 +47,11 @@ main(int argc, char *argv[]) {
     setbuf(stderr, NULL);
 #endif
 
+    printf("scrcpy " SCRCPY_VERSION
+           " <https://github.com/Genymobile/scrcpy>\n");
+
     struct scrcpy_cli_args args = {
-        .opts = SCRCPY_OPTIONS_DEFAULT,
+        .opts = scrcpy_options_default,
         .help = false,
         .version = false,
     };
@@ -72,8 +75,6 @@ main(int argc, char *argv[]) {
         print_version();
         return 0;
     }
-
-    LOGI("scrcpy " SCRCPY_VERSION " <https://github.com/Genymobile/scrcpy>");
 
 #ifdef SCRCPY_LAVF_REQUIRES_REGISTER_ALL
     av_register_all();
