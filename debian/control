@@ -26,7 +26,7 @@ Vcs-Browser: https://salsa.debian.org/yangfl-guest/scrcpy
 
 Package: scrcpy
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, scrcpy-server,
+Depends: ${misc:Depends}, ${shlibs:Depends}, scrcpy-server (= ${source:Version}),
 Recommends: adb,
 Description: Display and control your Android device
  This application provides display and control of Android devices connected on

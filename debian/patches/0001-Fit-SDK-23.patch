@@ -1,5 +1,5 @@
 diff --git a/server/src/main/java/com/genymobile/scrcpy/Controller.java b/server/src/main/java/com/genymobile/scrcpy/Controller.java
-index 9246004..8dafda4 100644
+index 481c512f..bf693102 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/Controller.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/Controller.java
 @@ -277,8 +277,8 @@ public class Controller {
@@ -25,10 +25,10 @@ index 9246004..8dafda4 100644
  
          if (sequence != ControlMessage.SEQUENCE_INVALID) {
 diff --git a/server/src/main/java/com/genymobile/scrcpy/Device.java b/server/src/main/java/com/genymobile/scrcpy/Device.java
-index ba833a0..33bb2d3 100644
+index 763a7fad..0e2302d9 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/Device.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/Device.java
-@@ -117,7 +117,7 @@ public final class Device {
+@@ -127,7 +127,7 @@ public final class Device {
          }
  
          // main display or any display on Android >= Q
@@ -37,7 +37,7 @@ index ba833a0..33bb2d3 100644
          if (!supportsInputEvents) {
              Ln.w("Input events are not supported for secondary displays before Android 10");
          }
-@@ -161,7 +161,7 @@ public final class Device {
+@@ -176,7 +176,7 @@ public final class Device {
      }
  
      public static boolean supportsInputEvents(int displayId) {
@@ -47,10 +47,10 @@ index ba833a0..33bb2d3 100644
  
      public boolean supportsInputEvents() {
 diff --git a/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java b/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
-index f98c53d..d009061 100644
+index e95896d3..5582cabb 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
-@@ -224,7 +224,7 @@ public class ScreenEncoder implements Device.RotationListener {
+@@ -273,7 +273,7 @@ public class ScreenEncoder implements Device.RotationListener {
      private static IBinder createDisplay() {
          // Since Android 12 (preview), secure displays could not be created with shell permissions anymore.
          // On Android 12 preview, SDK_INT is still R (not S), but CODENAME is "S".
@@ -60,7 +60,7 @@ index f98c53d..d009061 100644
          return SurfaceControl.createDisplay("scrcpy", secure);
      }
 diff --git a/server/src/main/java/com/genymobile/scrcpy/Settings.java b/server/src/main/java/com/genymobile/scrcpy/Settings.java
-index cb15ebb..f4e83bb 100644
+index cb15ebb4..f4e83bbd 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/Settings.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/Settings.java
 @@ -36,7 +36,7 @@ public class Settings {
@@ -91,7 +91,7 @@ index cb15ebb..f4e83bb 100644
              try (ContentProvider provider = serviceManager.getActivityManager().createSettingsProvider()) {
                  String oldValue = provider.getValue(table, key);
 diff --git a/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java b/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
-index e25b6e9..9566de6 100644
+index e25b6e99..9566de64 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/wrappers/ClipboardManager.java
 @@ -22,7 +22,7 @@ public class ClipboardManager {
@@ -149,7 +149,7 @@ index e25b6e9..9566de6 100644
                          .getMethod("addPrimaryClipChangedListener", IOnPrimaryClipChangedListener.class, String.class);
              } else {
 diff --git a/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java b/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java
-index 8fbb860..de09834 100644
+index 8fbb860b..de098347 100644
 --- a/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/wrappers/SurfaceControl.java
 @@ -88,7 +88,7 @@ public final class SurfaceControl {
