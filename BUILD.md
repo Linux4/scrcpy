@@ -46,7 +46,7 @@ sudo ninja -Cbuild-auto uninstall
 ### `master`
 
 The `master` branch concerns the latest release, and is the home page of the
-project on Github.
+project on GitHub.
 
 
 ### `dev`
@@ -272,10 +272,10 @@ install` must be run as root)._
 
 #### Option 2: Use prebuilt server
 
- - [`scrcpy-server-v1.22`][direct-scrcpy-server]  
-   _(SHA-256: c05d273eec7533c0e106282e0254cf04e7f5e8f0c2920ca39448865fab2a419b)_
+ - [`scrcpy-server-v1.23`][direct-scrcpy-server]  
+   _(SHA-256: 2a913fd47478c0b306fca507cb0beb625e49a19ff9fc7ab904e36ef5b9fe7e68)_
 
-[direct-scrcpy-server]: https://github.com/Genymobile/scrcpy/releases/download/v1.22/scrcpy-server-v1.22
+[direct-scrcpy-server]: https://github.com/Genymobile/scrcpy/releases/download/v1.23/scrcpy-server-v1.23
 
 Download the prebuilt server somewhere, and specify its path during the Meson
 configuration:
@@ -305,13 +305,16 @@ After a successful build, you can install _scrcpy_ on the system:
 sudo ninja -Cx install    # without sudo on Windows
 ```
 
-This installs three files:
+This installs several files:
 
- - `/usr/local/bin/scrcpy`
- - `/usr/local/share/scrcpy/scrcpy-server`
- - `/usr/local/share/man/man1/scrcpy.1`
+ - `/usr/local/bin/scrcpy` (main app)
+ - `/usr/local/share/scrcpy/scrcpy-server` (server to push to the device)
+ - `/usr/local/share/man/man1/scrcpy.1` (manpage)
+ - `/usr/local/share/icons/hicolor/256x256/apps/icon.png` (app icon)
+ - `/usr/local/share/zsh/site-functions/_scrcpy` (zsh completion)
+ - `/usr/local/share/bash-completion/completions/scrcpy` (bash completion)
 
-You can then [run](README.md#run) _scrcpy_.
+You can then [run](README.md#run) `scrcpy`.
 
 ### Uninstall
 
