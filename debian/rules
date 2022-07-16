@@ -38,7 +38,7 @@ override_dh_auto_configure-arch:
 	dh_auto_configure -a -- -Dcompile_server=false
 
 override_dh_auto_build-indep:
-	ANDROID_PLATFORM=23 ANDROID_BUILD_TOOLS=debian server/build_without_gradle.sh
+	BUILD_DIR=build_manual ANDROID_PLATFORM=23 ANDROID_BUILD_TOOLS=debian server/build_without_gradle.sh
 	# dirty hack for reproducible jar build
 	cd build_manual; \
 		unzip scrcpy-server; \
