@@ -260,7 +260,7 @@ set ANDROID_SDK_ROOT=%LOCALAPPDATA%\Android\sdk
 Then, build:
 
 ```bash
-meson x --buildtype=release --strip -Db_lto=true
+meson setup x --buildtype=release --strip -Db_lto=true
 ninja -Cx  # DO NOT RUN AS ROOT
 ```
 
@@ -272,16 +272,16 @@ install` must be run as root)._
 
 #### Option 2: Use prebuilt server
 
- - [`scrcpy-server-v1.23`][direct-scrcpy-server]  
-   _(SHA-256: 2a913fd47478c0b306fca507cb0beb625e49a19ff9fc7ab904e36ef5b9fe7e68)_
+ - [`scrcpy-server-v1.24`][direct-scrcpy-server]  
+   <sub>SHA-256: `ae74a81ea79c0dc7250e586627c278c0a9a8c5de46c9fb5c38c167fb1a36f056`</sub>
 
-[direct-scrcpy-server]: https://github.com/Genymobile/scrcpy/releases/download/v1.23/scrcpy-server-v1.23
+[direct-scrcpy-server]: https://github.com/Genymobile/scrcpy/releases/download/v1.24/scrcpy-server-v1.24
 
 Download the prebuilt server somewhere, and specify its path during the Meson
 configuration:
 
 ```bash
-meson x --buildtype=release --strip -Db_lto=true \
+meson setup x --buildtype=release --strip -Db_lto=true \
     -Dprebuilt_server=/path/to/scrcpy-server
 ninja -Cx  # DO NOT RUN AS ROOT
 ```
