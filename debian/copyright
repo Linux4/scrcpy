@@ -14,7 +14,7 @@ Copyright: 2010 The Android Open Source Project
 License: Apache-2
 
 Files: debian/*
-Copyright: 2019-2022 Yangfl <mmyangfl@gmail.com>
+Copyright: 2019-2023 Yangfl <mmyangfl@gmail.com>
 License: Apache-2
 
 Files: debian/missing-sources/gradle/wrapper/gradle-wrapper/*
