@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -e
+
+#DEBHELPER#
+
+if [ "$1" = remove ] && [ -f /usr/share/scrcpy/scrcpy-server ] ; then
+  echo "Removing prebuilt scrcpy server..."
+  rm -f /usr/share/scrcpy/scrcpy-server
+  rmdir --ignore-fail-on-non-empty /usr/share/scrcpy
+fi
+
+exit 0

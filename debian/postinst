@@ -1,0 +1,21 @@
+#!/bin/sh
+
+set -e
+
+#DEBHELPER#
+
+. /usr/share/debconf/confmodule
+
+db_get scrcpy/update_server
+db_stop
+
+if [ "$RET" = true ] ; then
+  ret=0
+  /usr/libexec/scrcpy-update-server || ret=$?
+  if [ "$ret" = 1 ] ; then
+    echo 'Run "sudo dpkg-reconfigure scrcpy" to skip download'
+  fi
+  exit "$ret"
+fi
+
+exit 0

@@ -19,13 +19,13 @@ include /usr/share/dpkg/pkg-info.mk
 
 build:
 	dh build-arch
-	dh build-indep --buildsystem=makefile
+	#dh build-indep --buildsystem=makefile
 
 build-arch:
 	dh build-arch
 
 build-indep:
-	dh build-indep --buildsystem=makefile
+	#dh build-indep --buildsystem=makefile
 
 clean:
 	dh clean

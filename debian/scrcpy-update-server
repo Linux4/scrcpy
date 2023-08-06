@@ -1,0 +1,58 @@
+#!/bin/sh -e
+
+VERSION=2.6.1
+SHA256=ca7ab50b2e25a0e5af7599c30383e365983fa5b808e65ce2e1c1bba5bfe8dc3b
+
+URL="https://github.com/Genymobile/scrcpy/releases/download/v$VERSION/scrcpy-server-v$VERSION"
+DESTDIR=/usr/share/scrcpy
+FILENAME=scrcpy-server
+DEST="$DESTDIR/$FILENAME"
+
+check() {
+    echo "$SHA256  $1" | sha256sum --check > /dev/null 2>&1
+    return $?
+}
+
+if check "$DEST"
+then
+    echo "[scrcpy] Server $VERSION already up to date"
+    exit 0
+fi
+
+if [ "$(id -u)" != 0 ] && [ "$1" != -f ]
+then
+    echo "Please run as root. Use -f to override."
+    exit 255
+fi
+
+TEMPFILE=$(mktemp -t "$FILENAME.XXXXXXXXXX")
+
+cleanup() {
+    rm -f "$TEMPFILE"
+}
+
+trap cleanup EXIT
+trap cleanup INT
+
+echo "[scrcpy] Downloading prebuilt server from $URL ..."
+if command -v curl > /dev/null 2>&1
+then
+    curl --connect-timeout 10 -L -o "$TEMPFILE" "$URL" || exit 1
+elif command -v wget > /dev/null 2>&1
+then
+    wget -T 10 -O "$TEMPFILE" "$URL" || exit 1
+else
+    echo "Please install 'wget' or 'curl' to download server file."
+    exit 1
+fi
+
+if ! check "$TEMPFILE"
+then
+    echo "[scrcpy] Download file verification FAILED"
+    exit 2
+fi
+echo "[scrcpy] Download file verification OK"
+
+mkdir -p "$DESTDIR"
+mv "$TEMPFILE" "$DEST"
+echo "[scrcpy] Server $VERSION installed"

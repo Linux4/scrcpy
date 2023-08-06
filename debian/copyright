@@ -2,10 +2,14 @@ Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: scrcpy
 Upstream-Contact: Romain Vimont <rom@rom1v.com>
 Source: https://github.com/Genymobile/scrcpy
+Comment:
+ This package used to provide scrcpy-server, but it cannot be built with
+ Debian's android-sdk anymore and prebuilt binary must be used directly from
+ upstream.
 
 Files: *
 Copyright: 2018 Genymobile
-           2018-2022 Romain Vimont <rom@rom1v.com>
+           2018-2024 Romain Vimont <rom@rom1v.com>
 License: Apache-2
 
 Files: app/src/android/input.h
@@ -14,7 +18,7 @@ Copyright: 2010 The Android Open Source Project
 License: Apache-2
 
 Files: debian/*
-Copyright: 2019-2023 Yangfl <mmyangfl@gmail.com>
+Copyright: 2019-2024 Yangfl <mmyangfl@gmail.com>
 License: Apache-2
 
 Files: debian/missing-sources/gradle/wrapper/gradle-wrapper/*

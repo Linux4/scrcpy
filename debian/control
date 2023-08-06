@@ -1,5 +1,5 @@
 Source: scrcpy
-Section: net
+Section: contrib/net
 Priority: optional
 Maintainer: Yangfl <mmyangfl@gmail.com>
 Build-Depends:
@@ -12,35 +12,38 @@ Build-Depends-Arch:
  libavutil-dev,
  libsdl2-dev,
  libusb-1.0-0-dev,
-Build-Depends-Indep:
- android-sdk,
- android-sdk-platform-23,
- default-jdk,
- unzip,
- zip,
 Rules-Requires-Root: no
-Standards-Version: 4.6.2
+Standards-Version: 4.7.0
 Homepage: https://github.com/Genymobile/scrcpy
 Vcs-Git: https://salsa.debian.org/yangfl-guest/scrcpy.git
 Vcs-Browser: https://salsa.debian.org/yangfl-guest/scrcpy
 
 Package: scrcpy
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, scrcpy-server (= ${source:Version}),
-Recommends: adb,
-Description: Display and control your Android device
- This application provides display and control of Android devices connected on
- USB (or over TCP/IP). It does not require any root access.
+Depends: ${misc:Depends}, ${shlibs:Depends},
+Breaks: scrcpy-server (<< 2.6.1),
+Replaces: scrcpy-server (<< 2.6.1),
+Recommends: adb, wget, ca-certificates,
+Description: Display and control your Android devices
+ scrcpy mirrors Android devices (video and audio) connected via USB or over
+ TCP/IP, and allows to control the device with the keyboard and the mouse of the
+ computer. It does not require any root access on Android devices.
  .
- This package contains the client (desktop) binary.
-
-Package: scrcpy-server
-Architecture: all
-Multi-Arch: foreign
-Depends: ${misc:Depends},
-Description: Display and control your Android device - server binary
- This application provides display and control of Android devices connected on
- USB (or over TCP/IP). It does not require any root access.
+ Its features include:
+   * audio forwarding (Android 11+)
+   * recording
+   * mirroring with Android device screen off
+   * copy-paste in both directions
+   * configurable quality
+   * camera mirroring (Android 12+)
+   * mirroring as a webcam (V4L2) (Linux-only)
+   * physical keyboard and mouse simulation (HID)
+   * OTG mode
+   * and more...
  .
- This package contains the server (mobile) binary, which will be pushed to the
- Android device.
+ The Android device requires at least API 21 (Android 5.0). Audio forwarding is
+ supported for API >= 30 (Android 11+). Make sure you enabled USB debugging on
+ your device(s).
+ .
+ This package contains the client (desktop) binary. Server (mobile) binary will
+ be downloaded directly from upstream.

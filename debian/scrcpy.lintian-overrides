@@ -1,2 +1,0 @@
-# shell wrapper
-scrcpy: desktop-command-not-in-package bin/bash [usr/share/applications/scrcpy-console.desktop]

@@ -1,3 +1,11 @@
+scrcpy (2.6.1-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #1042468)
+  * Move to contrib
+  * Bump Standards-Version to 4.7.0
+
+ -- Yangfl <mmyangfl@gmail.com>  Sun, 04 Aug 2024 14:23:03 +0800
+
 scrcpy (1.25-1) unstable; urgency=medium
 
   * New upstream release
