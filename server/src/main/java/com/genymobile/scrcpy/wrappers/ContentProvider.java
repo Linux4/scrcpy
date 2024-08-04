@@ -1,17 +1,19 @@
 package com.genymobile.scrcpy.wrappers;
 
-import com.genymobile.scrcpy.Ln;
-import com.genymobile.scrcpy.SettingsException;
+import com.genymobile.scrcpy.FakeContext;
+import com.genymobile.scrcpy.util.Ln;
+import com.genymobile.scrcpy.util.SettingsException;
 
 import android.annotation.SuppressLint;
+import android.content.AttributionSource;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 
 import java.io.Closeable;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-public class ContentProvider implements Closeable {
+public final class ContentProvider implements Closeable {
 
     public static final String TABLE_SYSTEM = "system";
     public static final String TABLE_SECURE = "secure";
@@ -39,8 +41,6 @@ public class ContentProvider implements Closeable {
     private Method callMethod;
     private int callMethodVersion;
 
-    private Object attributionSource;
-
     ContentProvider(ActivityManager manager, Object provider, String name, IBinder token) {
         this.manager = manager;
         this.provider = provider;
@@ -51,11 +51,10 @@ public class ContentProvider implements Closeable {
     @SuppressLint("PrivateApi")
     private Method getCallMethod() throws NoSuchMethodException {
         if (callMethod == null) {
-            try {
-                Class<?> attributionSourceClass = Class.forName("android.content.AttributionSource");
-                callMethod = provider.getClass().getMethod("call", attributionSourceClass, String.class, String.class, String.class, Bundle.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                callMethod = provider.getClass().getMethod("call", AttributionSource.class, String.class, String.class, String.class, Bundle.class);
                 callMethodVersion = 0;
-            } catch (NoSuchMethodException | ClassNotFoundException e0) {
+            } else {
                 // old versions
                 try {
                     callMethod = provider.getClass()
@@ -75,40 +74,28 @@ public class ContentProvider implements Closeable {
         return callMethod;
     }
 
-    @SuppressLint("PrivateApi")
-    private Object getAttributionSource()
-            throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
-        if (attributionSource == null) {
-            Class<?> cl = Class.forName("android.content.AttributionSource$Builder");
-            Object builder = cl.getConstructor(int.class).newInstance(ServiceManager.USER_ID);
-            cl.getDeclaredMethod("setPackageName", String.class).invoke(builder, ServiceManager.PACKAGE_NAME);
-            attributionSource = cl.getDeclaredMethod("build").invoke(builder);
-        }
-
-        return attributionSource;
-    }
-
-    private Bundle call(String callMethod, String arg, Bundle extras)
-            throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+    private Bundle call(String callMethod, String arg, Bundle extras) throws ReflectiveOperationException {
         try {
             Method method = getCallMethod();
             Object[] args;
-            switch (callMethodVersion) {
-                case 0:
-                    args = new Object[]{getAttributionSource(), "settings", callMethod, arg, extras};
-                    break;
-                case 1:
-                    args = new Object[]{ServiceManager.PACKAGE_NAME, null, "settings", callMethod, arg, extras};
-                    break;
-                case 2:
-                    args = new Object[]{ServiceManager.PACKAGE_NAME, "settings", callMethod, arg, extras};
-                    break;
-                default:
-                    args = new Object[]{ServiceManager.PACKAGE_NAME, callMethod, arg, extras};
-                    break;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && callMethodVersion == 0) {
+                args = new Object[]{FakeContext.get().getAttributionSource(), "settings", callMethod, arg, extras};
+            } else {
+                switch (callMethodVersion) {
+                    case 1:
+                        args = new Object[]{FakeContext.PACKAGE_NAME, null, "settings", callMethod, arg, extras};
+                        break;
+                    case 2:
+                        args = new Object[]{FakeContext.PACKAGE_NAME, "settings", callMethod, arg, extras};
+                        break;
+                    default:
+                        args = new Object[]{FakeContext.PACKAGE_NAME, callMethod, arg, extras};
+                        break;
+                }
             }
             return (Bundle) method.invoke(provider, args);
-        } catch (InvocationTargetException | IllegalAccessException | NoSuchMethodException | ClassNotFoundException | InstantiationException e) {
+        } catch (ReflectiveOperationException e) {
             Ln.e("Could not invoke method", e);
             throw e;
         }
@@ -147,7 +134,7 @@ public class ContentProvider implements Closeable {
     public String getValue(String table, String key) throws SettingsException {
         String method = getGetMethod(table);
         Bundle arg = new Bundle();
-        arg.putInt(CALL_METHOD_USER_KEY, ServiceManager.USER_ID);
+        arg.putInt(CALL_METHOD_USER_KEY, FakeContext.ROOT_UID);
         try {
             Bundle bundle = call(method, key, arg);
             if (bundle == null) {
@@ -163,7 +150,7 @@ public class ContentProvider implements Closeable {
     public void putValue(String table, String key, String value) throws SettingsException {
         String method = getPutMethod(table);
         Bundle arg = new Bundle();
-        arg.putInt(CALL_METHOD_USER_KEY, ServiceManager.USER_ID);
+        arg.putInt(CALL_METHOD_USER_KEY, FakeContext.ROOT_UID);
         arg.putString(NAME_VALUE_TABLE_VALUE, value);
         try {
             call(method, key, arg);

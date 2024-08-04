@@ -7,7 +7,6 @@
 #include "events.h"
 #include "icon.h"
 #include "options.h"
-#include "video_buffer.h"
 #include "util/log.h"
 
 #define DISPLAY_MARGINS 96
@@ -15,16 +14,16 @@
 #define DOWNCAST(SINK) container_of(SINK, struct sc_screen, frame_sink)
 
 static inline struct sc_size
-get_rotated_size(struct sc_size size, int rotation) {
-    struct sc_size rotated_size;
-    if (rotation & 1) {
-        rotated_size.width = size.height;
-        rotated_size.height = size.width;
+get_oriented_size(struct sc_size size, enum sc_orientation orientation) {
+    struct sc_size oriented_size;
+    if (sc_orientation_is_swap(orientation)) {
+        oriented_size.width = size.height;
+        oriented_size.height = size.width;
     } else {
-        rotated_size.width = size.width;
-        rotated_size.height = size.height;
+        oriented_size.width = size.width;
+        oriented_size.height = size.height;
     }
-    return rotated_size;
+    return oriented_size;
 }
 
 // get the window size in a struct sc_size
@@ -57,6 +56,7 @@ static void
 set_window_size(struct sc_screen *screen, struct sc_size new_size) {
     assert(!screen->fullscreen);
     assert(!screen->maximized);
+    assert(!screen->minimized);
     SDL_SetWindowSize(screen->window, new_size.width, new_size.height);
 }
 
@@ -205,6 +205,8 @@ sc_screen_toggle_mouse_capture(struct sc_screen *screen) {
 
 static void
 sc_screen_update_content_rect(struct sc_screen *screen) {
+    assert(screen->video);
+
     int dw;
     int dh;
     SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
@@ -240,86 +242,45 @@ sc_screen_update_content_rect(struct sc_screen *screen) {
     }
 }
 
-static inline SDL_Texture *
-create_texture(struct sc_screen *screen) {
-    SDL_Renderer *renderer = screen->renderer;
-    struct sc_size size = screen->frame_size;
-    SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_YV12,
-                                             SDL_TEXTUREACCESS_STREAMING,
-                                             size.width, size.height);
-    if (!texture) {
-        return NULL;
-    }
-
-    if (screen->mipmaps) {
-        struct sc_opengl *gl = &screen->gl;
-
-        SDL_GL_BindTexture(texture, NULL, NULL);
-
-        // Enable trilinear filtering for downscaling
-        gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                          GL_LINEAR_MIPMAP_LINEAR);
-        gl->TexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -1.f);
-
-        SDL_GL_UnbindTexture(texture);
-    }
-
-    return texture;
-}
-
 // render the texture to the renderer
 //
 // Set the update_content_rect flag if the window or content size may have
 // changed, so that the content rectangle is recomputed
 static void
 sc_screen_render(struct sc_screen *screen, bool update_content_rect) {
+    assert(screen->video);
+
     if (update_content_rect) {
         sc_screen_update_content_rect(screen);
     }
 
-    SDL_RenderClear(screen->renderer);
-    if (screen->rotation == 0) {
-        SDL_RenderCopy(screen->renderer, screen->texture, NULL, &screen->rect);
-    } else {
-        // rotation in RenderCopyEx() is clockwise, while screen->rotation is
-        // counterclockwise (to be consistent with --lock-video-orientation)
-        int cw_rotation = (4 - screen->rotation) % 4;
-        double angle = 90 * cw_rotation;
-
-        SDL_Rect *dstrect = NULL;
-        SDL_Rect rect;
-        if (screen->rotation & 1) {
-            rect.x = screen->rect.x + (screen->rect.w - screen->rect.h) / 2;
-            rect.y = screen->rect.y + (screen->rect.h - screen->rect.w) / 2;
-            rect.w = screen->rect.h;
-            rect.h = screen->rect.w;
-            dstrect = &rect;
-        } else {
-            assert(screen->rotation == 2);
-            dstrect = &screen->rect;
-        }
-
-        SDL_RenderCopyEx(screen->renderer, screen->texture, NULL, dstrect,
-                         angle, NULL, 0);
-    }
-    SDL_RenderPresent(screen->renderer);
+    enum sc_display_result res =
+        sc_display_render(&screen->display, &screen->rect, screen->orientation);
+    (void) res; // any error already logged
 }
 
+static void
+sc_screen_render_novideo(struct sc_screen *screen) {
+    enum sc_display_result res =
+        sc_display_render(&screen->display, NULL, SC_ORIENTATION_0);
+    (void) res; // any error already logged
+}
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(__WINDOWS__)
 # define CONTINUOUS_RESIZING_WORKAROUND
 #endif
 
 #ifdef CONTINUOUS_RESIZING_WORKAROUND
 // On Windows and MacOS, resizing blocks the event loop, so resizing events are
-// not triggered. On MacOS, as a workaround, handle them in an event handler
-// (it does not work for Windows unfortunately).
+// not triggered. As a workaround, handle them in an event handler.
 //
 // <https://bugzilla.libsdl.org/show_bug.cgi?id=2077>
 // <https://stackoverflow.com/a/40693139/1987178>
 static int
 event_watcher(void *data, SDL_Event *event) {
     struct sc_screen *screen = data;
+    assert(screen->video);
+
     if (event->type == SDL_WINDOWEVENT
             && event->window.event == SDL_WINDOWEVENT_RESIZED) {
         // In practice, it seems to always be called from the same thread in
@@ -331,9 +292,31 @@ event_watcher(void *data, SDL_Event *event) {
 #endif
 
 static bool
-sc_screen_frame_sink_open(struct sc_frame_sink *sink) {
+sc_screen_frame_sink_open(struct sc_frame_sink *sink,
+                          const AVCodecContext *ctx) {
+    assert(ctx->pix_fmt == AV_PIX_FMT_YUV420P);
+    (void) ctx;
+
     struct sc_screen *screen = DOWNCAST(sink);
-    (void) screen;
+
+    assert(ctx->width > 0 && ctx->width <= 0xFFFF);
+    assert(ctx->height > 0 && ctx->height <= 0xFFFF);
+    // screen->frame_size is never used before the event is pushed, and the
+    // event acts as a memory barrier so it is safe without mutex
+    screen->frame_size.width = ctx->width;
+    screen->frame_size.height = ctx->height;
+
+    static SDL_Event event = {
+        .type = SC_EVENT_SCREEN_INIT_SIZE,
+    };
+
+    // Post the event on the UI thread (the texture must be created from there)
+    int ret = SDL_PushEvent(&event);
+    if (ret < 0) {
+        LOGW("Could not post init size event: %s", SDL_GetError());
+        return false;
+    }
+
 #ifndef NDEBUG
     screen->open = true;
 #endif
@@ -356,43 +339,32 @@ sc_screen_frame_sink_close(struct sc_frame_sink *sink) {
 static bool
 sc_screen_frame_sink_push(struct sc_frame_sink *sink, const AVFrame *frame) {
     struct sc_screen *screen = DOWNCAST(sink);
-    return sc_video_buffer_push(&screen->vb, frame);
-}
+    assert(screen->video);
 
-static void
-sc_video_buffer_on_new_frame(struct sc_video_buffer *vb, bool previous_skipped,
-                             void *userdata) {
-    (void) vb;
-    struct sc_screen *screen = userdata;
-
-    // event_failed implies previous_skipped (the previous frame may not have
-    // been consumed if the event was not sent)
-    assert(!screen->event_failed || previous_skipped);
-
-    bool need_new_event;
-    if (previous_skipped) {
-        sc_fps_counter_add_skipped_frame(&screen->fps_counter);
-        // The EVENT_NEW_FRAME triggered for the previous frame will consume
-        // this new frame instead, unless the previous event failed
-        need_new_event = screen->event_failed;
-    } else {
-        need_new_event = true;
+    bool previous_skipped;
+    bool ok = sc_frame_buffer_push(&screen->fb, frame, &previous_skipped);
+    if (!ok) {
+        return false;
     }
 
-    if (need_new_event) {
+    if (previous_skipped) {
+        sc_fps_counter_add_skipped_frame(&screen->fps_counter);
+        // The SC_EVENT_NEW_FRAME triggered for the previous frame will consume
+        // this new frame instead
+    } else {
         static SDL_Event new_frame_event = {
-            .type = EVENT_NEW_FRAME,
+            .type = SC_EVENT_NEW_FRAME,
         };
 
         // Post the event on the UI thread
         int ret = SDL_PushEvent(&new_frame_event);
         if (ret < 0) {
             LOGW("Could not post new frame event: %s", SDL_GetError());
-            screen->event_failed = true;
-        } else {
-            screen->event_failed = false;
+            return false;
         }
     }
+
+    return true;
 }
 
 bool
@@ -402,8 +374,13 @@ sc_screen_init(struct sc_screen *screen,
     screen->has_frame = false;
     screen->fullscreen = false;
     screen->maximized = false;
-    screen->event_failed = false;
+    screen->minimized = false;
     screen->mouse_capture_key_pressed = 0;
+    screen->paused = false;
+    screen->resume_frame = NULL;
+    screen->orientation = SC_ORIENTATION_0;
+
+    screen->video = params->video;
 
     screen->req.x = params->window_x;
     screen->req.y = params->window_y;
@@ -412,112 +389,90 @@ sc_screen_init(struct sc_screen *screen,
     screen->req.fullscreen = params->fullscreen;
     screen->req.start_fps_counter = params->start_fps_counter;
 
-    static const struct sc_video_buffer_callbacks cbs = {
-        .on_new_frame = sc_video_buffer_on_new_frame,
-    };
-
-    bool ok = sc_video_buffer_init(&screen->vb, params->buffering_time, &cbs,
-                                   screen);
+    bool ok = sc_frame_buffer_init(&screen->fb);
     if (!ok) {
         return false;
     }
 
-    ok = sc_video_buffer_start(&screen->vb);
-    if (!ok) {
-        goto error_destroy_video_buffer;
-    }
-
     if (!sc_fps_counter_init(&screen->fps_counter)) {
-        goto error_stop_and_join_video_buffer;
+        goto error_destroy_frame_buffer;
     }
 
-    screen->frame_size = params->frame_size;
-    screen->rotation = params->rotation;
-    if (screen->rotation) {
-        LOGI("Initial display rotation set to %u", screen->rotation);
+    if (screen->video) {
+        screen->orientation = params->orientation;
+        if (screen->orientation != SC_ORIENTATION_0) {
+            LOGI("Initial display orientation set to %s",
+                 sc_orientation_get_name(screen->orientation));
+        }
     }
-    struct sc_size content_size =
-        get_rotated_size(screen->frame_size, screen->rotation);
-    screen->content_size = content_size;
 
-    uint32_t window_flags = SDL_WINDOW_HIDDEN
-                          | SDL_WINDOW_RESIZABLE
-                          | SDL_WINDOW_ALLOW_HIGHDPI;
+    uint32_t window_flags = SDL_WINDOW_ALLOW_HIGHDPI;
     if (params->always_on_top) {
         window_flags |= SDL_WINDOW_ALWAYS_ON_TOP;
     }
     if (params->window_borderless) {
         window_flags |= SDL_WINDOW_BORDERLESS;
     }
+    if (params->video) {
+        // The window will be shown on first frame
+        window_flags |= SDL_WINDOW_HIDDEN
+                      | SDL_WINDOW_RESIZABLE;
+    }
+
+    const char *title = params->window_title;
+    assert(title);
+
+    int x = SDL_WINDOWPOS_UNDEFINED;
+    int y = SDL_WINDOWPOS_UNDEFINED;
+    int width = 256;
+    int height = 256;
+    if (params->window_x != SC_WINDOW_POSITION_UNDEFINED) {
+        x = params->window_x;
+    }
+    if (params->window_y != SC_WINDOW_POSITION_UNDEFINED) {
+        y = params->window_y;
+    }
+    if (params->window_width) {
+        width = params->window_width;
+    }
+    if (params->window_height) {
+        height = params->window_height;
+    }
 
     // The window will be positioned and sized on first video frame
-    screen->window =
-        SDL_CreateWindow(params->window_title, 0, 0, 0, 0, window_flags);
+    screen->window = SDL_CreateWindow(title, x, y, width, height, window_flags);
     if (!screen->window) {
         LOGE("Could not create window: %s", SDL_GetError());
         goto error_destroy_fps_counter;
     }
 
-    screen->renderer = SDL_CreateRenderer(screen->window, -1,
-                                          SDL_RENDERER_ACCELERATED);
-    if (!screen->renderer) {
-        LOGE("Could not create renderer: %s", SDL_GetError());
-        goto error_destroy_window;
-    }
-
-    SDL_RendererInfo renderer_info;
-    int r = SDL_GetRendererInfo(screen->renderer, &renderer_info);
-    const char *renderer_name = r ? NULL : renderer_info.name;
-    LOGI("Renderer: %s", renderer_name ? renderer_name : "(unknown)");
-
-    screen->mipmaps = false;
-
-    // starts with "opengl"
-    bool use_opengl = renderer_name && !strncmp(renderer_name, "opengl", 6);
-    if (use_opengl) {
-        struct sc_opengl *gl = &screen->gl;
-        sc_opengl_init(gl);
-
-        LOGI("OpenGL version: %s", gl->version);
-
-        if (params->mipmaps) {
-            bool supports_mipmaps =
-                sc_opengl_version_at_least(gl, 3, 0, /* OpenGL 3.0+ */
-                                               2, 0  /* OpenGL ES 2.0+ */);
-            if (supports_mipmaps) {
-                LOGI("Trilinear filtering enabled");
-                screen->mipmaps = true;
-            } else {
-                LOGW("Trilinear filtering disabled "
-                     "(OpenGL 3.0+ or ES 2.0+ required)");
-            }
-        } else {
-            LOGI("Trilinear filtering disabled");
-        }
-    } else if (params->mipmaps) {
-        LOGD("Trilinear filtering disabled (not an OpenGL renderer)");
-    }
-
     SDL_Surface *icon = scrcpy_icon_load();
     if (icon) {
         SDL_SetWindowIcon(screen->window, icon);
-        scrcpy_icon_destroy(icon);
-    } else {
+    } else if (params->video) {
+        // just a warning
         LOGW("Could not load icon");
+    } else {
+        // without video, the icon is used as window content, it must be present
+        LOGE("Could not load icon");
+        goto error_destroy_fps_counter;
     }
 
-    LOGI("Initial texture: %" PRIu16 "x%" PRIu16, params->frame_size.width,
-                                                  params->frame_size.height);
-    screen->texture = create_texture(screen);
-    if (!screen->texture) {
-        LOGE("Could not create texture: %s", SDL_GetError());
-        goto error_destroy_renderer;
+    SDL_Surface *icon_novideo = params->video ? NULL : icon;
+    bool mipmaps = params->video && params->mipmaps;
+    ok = sc_display_init(&screen->display, screen->window, icon_novideo,
+                         mipmaps);
+    if (icon) {
+        scrcpy_icon_destroy(icon);
+    }
+    if (!ok) {
+        goto error_destroy_window;
     }
 
     screen->frame = av_frame_alloc();
     if (!screen->frame) {
         LOG_OOM();
-        goto error_destroy_texture;
+        goto error_destroy_display;
     }
 
     struct sc_input_manager_params im_params = {
@@ -526,7 +481,7 @@ sc_screen_init(struct sc_screen *screen,
         .screen = screen,
         .kp = params->kp,
         .mp = params->mp,
-        .forward_all_clicks = params->forward_all_clicks,
+        .mouse_bindings = params->mouse_bindings,
         .legacy_paste = params->legacy_paste,
         .clipboard_autosync = params->clipboard_autosync,
         .shortcut_mods = params->shortcut_mods,
@@ -535,7 +490,9 @@ sc_screen_init(struct sc_screen *screen,
     sc_input_manager_init(&screen->im, &im_params);
 
 #ifdef CONTINUOUS_RESIZING_WORKAROUND
-    SDL_AddEventWatch(event_watcher, screen);
+    if (screen->video) {
+        SDL_AddEventWatch(event_watcher, screen);
+    }
 #endif
 
     static const struct sc_frame_sink_ops ops = {
@@ -550,21 +507,21 @@ sc_screen_init(struct sc_screen *screen,
     screen->open = false;
 #endif
 
+    if (!screen->video && sc_screen_is_relative_mode(screen)) {
+        // Capture mouse immediately if video mirroring is disabled
+        sc_screen_set_mouse_capture(screen, true);
+    }
+
     return true;
 
-error_destroy_texture:
-    SDL_DestroyTexture(screen->texture);
-error_destroy_renderer:
-    SDL_DestroyRenderer(screen->renderer);
+error_destroy_display:
+    sc_display_destroy(&screen->display);
 error_destroy_window:
     SDL_DestroyWindow(screen->window);
 error_destroy_fps_counter:
     sc_fps_counter_destroy(&screen->fps_counter);
-error_stop_and_join_video_buffer:
-    sc_video_buffer_stop(&screen->vb);
-    sc_video_buffer_join(&screen->vb);
-error_destroy_video_buffer:
-    sc_video_buffer_destroy(&screen->vb);
+error_destroy_frame_buffer:
+    sc_frame_buffer_destroy(&screen->fb);
 
     return false;
 }
@@ -592,6 +549,7 @@ sc_screen_show_initial_window(struct sc_screen *screen) {
     }
 
     SDL_ShowWindow(screen->window);
+    sc_screen_update_content_rect(screen);
 }
 
 void
@@ -601,13 +559,11 @@ sc_screen_hide_window(struct sc_screen *screen) {
 
 void
 sc_screen_interrupt(struct sc_screen *screen) {
-    sc_video_buffer_stop(&screen->vb);
     sc_fps_counter_interrupt(&screen->fps_counter);
 }
 
 void
 sc_screen_join(struct sc_screen *screen) {
-    sc_video_buffer_join(&screen->vb);
     sc_fps_counter_join(&screen->fps_counter);
 }
 
@@ -616,17 +572,18 @@ sc_screen_destroy(struct sc_screen *screen) {
 #ifndef NDEBUG
     assert(!screen->open);
 #endif
+    sc_display_destroy(&screen->display);
     av_frame_free(&screen->frame);
-    SDL_DestroyTexture(screen->texture);
-    SDL_DestroyRenderer(screen->renderer);
     SDL_DestroyWindow(screen->window);
     sc_fps_counter_destroy(&screen->fps_counter);
-    sc_video_buffer_destroy(&screen->vb);
+    sc_frame_buffer_destroy(&screen->fb);
 }
 
 static void
 resize_for_content(struct sc_screen *screen, struct sc_size old_content_size,
                    struct sc_size new_content_size) {
+    assert(screen->video);
+
     struct sc_size window_size = get_window_size(screen);
     struct sc_size target_size = {
         .width = (uint32_t) window_size.width * new_content_size.width
@@ -640,11 +597,13 @@ resize_for_content(struct sc_screen *screen, struct sc_size old_content_size,
 
 static void
 set_content_size(struct sc_screen *screen, struct sc_size new_content_size) {
-    if (!screen->fullscreen && !screen->maximized) {
+    assert(screen->video);
+
+    if (!screen->fullscreen && !screen->maximized && !screen->minimized) {
         resize_for_content(screen, screen->content_size, new_content_size);
     } else if (!screen->resize_pending) {
         // Store the windowed size to be able to compute the optimal size once
-        // fullscreen and maximized are disabled
+        // fullscreen/maximized/minimized are disabled
         screen->windowed_content_size = screen->content_size;
         screen->resize_pending = true;
     }
@@ -654,8 +613,11 @@ set_content_size(struct sc_screen *screen, struct sc_size new_content_size) {
 
 static void
 apply_pending_resize(struct sc_screen *screen) {
+    assert(screen->video);
+
     assert(!screen->fullscreen);
     assert(!screen->maximized);
+    assert(!screen->minimized);
     if (screen->resize_pending) {
         resize_for_content(screen, screen->windowed_content_size,
                                    screen->content_size);
@@ -664,79 +626,88 @@ apply_pending_resize(struct sc_screen *screen) {
 }
 
 void
-sc_screen_set_rotation(struct sc_screen *screen, unsigned rotation) {
-    assert(rotation < 4);
-    if (rotation == screen->rotation) {
+sc_screen_set_orientation(struct sc_screen *screen,
+                          enum sc_orientation orientation) {
+    assert(screen->video);
+
+    if (orientation == screen->orientation) {
         return;
     }
 
     struct sc_size new_content_size =
-        get_rotated_size(screen->frame_size, rotation);
+        get_oriented_size(screen->frame_size, orientation);
 
     set_content_size(screen, new_content_size);
 
-    screen->rotation = rotation;
-    LOGI("Display rotation set to %u", rotation);
+    screen->orientation = orientation;
+    LOGI("Display orientation set to %s", sc_orientation_get_name(orientation));
 
     sc_screen_render(screen, true);
 }
 
+static bool
+sc_screen_init_size(struct sc_screen *screen) {
+    // Before first frame
+    assert(!screen->has_frame);
+
+    // The requested size is passed via screen->frame_size
+
+    struct sc_size content_size =
+        get_oriented_size(screen->frame_size, screen->orientation);
+    screen->content_size = content_size;
+
+    enum sc_display_result res =
+        sc_display_set_texture_size(&screen->display, screen->frame_size);
+    return res != SC_DISPLAY_RESULT_ERROR;
+}
+
 // recreate the texture and resize the window if the frame size has changed
-static bool
+static enum sc_display_result
 prepare_for_frame(struct sc_screen *screen, struct sc_size new_frame_size) {
-    if (screen->frame_size.width != new_frame_size.width
-            || screen->frame_size.height != new_frame_size.height) {
-        // frame dimension changed, destroy texture
-        SDL_DestroyTexture(screen->texture);
+    assert(screen->video);
 
-        screen->frame_size = new_frame_size;
-
-        struct sc_size new_content_size =
-            get_rotated_size(new_frame_size, screen->rotation);
-        set_content_size(screen, new_content_size);
-
-        sc_screen_update_content_rect(screen);
-
-        LOGI("New texture: %" PRIu16 "x%" PRIu16,
-                     screen->frame_size.width, screen->frame_size.height);
-        screen->texture = create_texture(screen);
-        if (!screen->texture) {
-            LOGE("Could not create texture: %s", SDL_GetError());
-            return false;
-        }
+    if (screen->frame_size.width == new_frame_size.width
+            && screen->frame_size.height == new_frame_size.height) {
+        return SC_DISPLAY_RESULT_OK;
     }
 
-    return true;
-}
+    // frame dimension changed
+    screen->frame_size = new_frame_size;
 
-// write the frame into the texture
-static void
-update_texture(struct sc_screen *screen, const AVFrame *frame) {
-    SDL_UpdateYUVTexture(screen->texture, NULL,
-            frame->data[0], frame->linesize[0],
-            frame->data[1], frame->linesize[1],
-            frame->data[2], frame->linesize[2]);
+    struct sc_size new_content_size =
+        get_oriented_size(new_frame_size, screen->orientation);
+    set_content_size(screen, new_content_size);
 
-    if (screen->mipmaps) {
-        SDL_GL_BindTexture(screen->texture, NULL, NULL);
-        screen->gl.GenerateMipmap(GL_TEXTURE_2D);
-        SDL_GL_UnbindTexture(screen->texture);
-    }
+    sc_screen_update_content_rect(screen);
+
+    return sc_display_set_texture_size(&screen->display, screen->frame_size);
 }
 
 static bool
-sc_screen_update_frame(struct sc_screen *screen) {
-    av_frame_unref(screen->frame);
-    sc_video_buffer_consume(&screen->vb, screen->frame);
-    AVFrame *frame = screen->frame;
+sc_screen_apply_frame(struct sc_screen *screen) {
+    assert(screen->video);
 
     sc_fps_counter_add_rendered_frame(&screen->fps_counter);
 
+    AVFrame *frame = screen->frame;
     struct sc_size new_frame_size = {frame->width, frame->height};
-    if (!prepare_for_frame(screen, new_frame_size)) {
+    enum sc_display_result res = prepare_for_frame(screen, new_frame_size);
+    if (res == SC_DISPLAY_RESULT_ERROR) {
         return false;
     }
-    update_texture(screen, frame);
+    if (res == SC_DISPLAY_RESULT_PENDING) {
+        // Not an error, but do not continue
+        return true;
+    }
+
+    res = sc_display_update_texture(&screen->display, frame);
+    if (res == SC_DISPLAY_RESULT_ERROR) {
+        return false;
+    }
+    if (res == SC_DISPLAY_RESULT_PENDING) {
+        // Not an error, but do not continue
+        return true;
+    }
 
     if (!screen->has_frame) {
         screen->has_frame = true;
@@ -753,8 +724,62 @@ sc_screen_update_frame(struct sc_screen *screen) {
     return true;
 }
 
+static bool
+sc_screen_update_frame(struct sc_screen *screen) {
+    assert(screen->video);
+
+    if (screen->paused) {
+        if (!screen->resume_frame) {
+            screen->resume_frame = av_frame_alloc();
+            if (!screen->resume_frame) {
+                LOG_OOM();
+                return false;
+            }
+        } else {
+            av_frame_unref(screen->resume_frame);
+        }
+        sc_frame_buffer_consume(&screen->fb, screen->resume_frame);
+        return true;
+    }
+
+    av_frame_unref(screen->frame);
+    sc_frame_buffer_consume(&screen->fb, screen->frame);
+    return sc_screen_apply_frame(screen);
+}
+
+void
+sc_screen_set_paused(struct sc_screen *screen, bool paused) {
+    assert(screen->video);
+
+    if (!paused && !screen->paused) {
+        // nothing to do
+        return;
+    }
+
+    if (screen->paused && screen->resume_frame) {
+        // If display screen was paused, refresh the frame immediately, even if
+        // the new state is also paused.
+        av_frame_free(&screen->frame);
+        screen->frame = screen->resume_frame;
+        screen->resume_frame = NULL;
+        sc_screen_apply_frame(screen);
+    }
+
+    if (!paused) {
+        LOGI("Display screen unpaused");
+    } else if (!screen->paused) {
+        LOGI("Display screen paused");
+    } else {
+        LOGI("Display screen re-paused");
+    }
+
+    screen->paused = paused;
+}
+
 void
 sc_screen_switch_fullscreen(struct sc_screen *screen) {
+    assert(screen->video);
+
     uint32_t new_mode = screen->fullscreen ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP;
     if (SDL_SetWindowFullscreen(screen->window, new_mode)) {
         LOGW("Could not switch fullscreen mode: %s", SDL_GetError());
@@ -762,7 +787,7 @@ sc_screen_switch_fullscreen(struct sc_screen *screen) {
     }
 
     screen->fullscreen = !screen->fullscreen;
-    if (!screen->fullscreen && !screen->maximized) {
+    if (!screen->fullscreen && !screen->maximized && !screen->minimized) {
         apply_pending_resize(screen);
     }
 
@@ -772,7 +797,9 @@ sc_screen_switch_fullscreen(struct sc_screen *screen) {
 
 void
 sc_screen_resize_to_fit(struct sc_screen *screen) {
-    if (screen->fullscreen || screen->maximized) {
+    assert(screen->video);
+
+    if (screen->fullscreen || screen->maximized || screen->minimized) {
         return;
     }
 
@@ -796,7 +823,9 @@ sc_screen_resize_to_fit(struct sc_screen *screen) {
 
 void
 sc_screen_resize_to_pixel_perfect(struct sc_screen *screen) {
-    if (screen->fullscreen) {
+    assert(screen->video);
+
+    if (screen->fullscreen || screen->minimized) {
         return;
     }
 
@@ -816,22 +845,39 @@ sc_screen_is_mouse_capture_key(SDL_Keycode key) {
     return key == SDLK_LALT || key == SDLK_LGUI || key == SDLK_RGUI;
 }
 
-void
-sc_screen_handle_event(struct sc_screen *screen, SDL_Event *event) {
+bool
+sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
     bool relative_mode = sc_screen_is_relative_mode(screen);
 
     switch (event->type) {
-        case EVENT_NEW_FRAME: {
+        case SC_EVENT_SCREEN_INIT_SIZE: {
+            // The initial size is passed via screen->frame_size
+            bool ok = sc_screen_init_size(screen);
+            if (!ok) {
+                LOGE("Could not initialize screen size");
+                return false;
+            }
+            return true;
+        }
+        case SC_EVENT_NEW_FRAME: {
             bool ok = sc_screen_update_frame(screen);
             if (!ok) {
-                LOGW("Frame update failed\n");
+                LOGE("Frame update failed\n");
+                return false;
             }
-            return;
+            return true;
         }
         case SDL_WINDOWEVENT:
+            if (!screen->video
+                    && event->window.event == SDL_WINDOWEVENT_EXPOSED) {
+                sc_screen_render_novideo(screen);
+            }
+
+            // !video implies !has_frame
+            assert(screen->video || !screen->has_frame);
             if (!screen->has_frame) {
                 // Do nothing
-                return;
+                return true;
             }
             switch (event->window.event) {
                 case SDL_WINDOWEVENT_EXPOSED:
@@ -843,6 +889,9 @@ sc_screen_handle_event(struct sc_screen *screen, SDL_Event *event) {
                 case SDL_WINDOWEVENT_MAXIMIZED:
                     screen->maximized = true;
                     break;
+                case SDL_WINDOWEVENT_MINIMIZED:
+                    screen->minimized = true;
+                    break;
                 case SDL_WINDOWEVENT_RESTORED:
                     if (screen->fullscreen) {
                         // On Windows, in maximized+fullscreen, disabling
@@ -853,6 +902,7 @@ sc_screen_handle_event(struct sc_screen *screen, SDL_Event *event) {
                         break;
                     }
                     screen->maximized = false;
+                    screen->minimized = false;
                     apply_pending_resize(screen);
                     sc_screen_render(screen, true);
                     break;
@@ -862,7 +912,7 @@ sc_screen_handle_event(struct sc_screen *screen, SDL_Event *event) {
                     }
                     break;
             }
-            return;
+            return true;
         case SDL_KEYDOWN:
             if (relative_mode) {
                 SDL_Keycode key = event->key.keysym.sym;
@@ -875,7 +925,7 @@ sc_screen_handle_event(struct sc_screen *screen, SDL_Event *event) {
                         screen->mouse_capture_key_pressed = 0;
                     }
                     // Mouse capture keys are never forwarded to the device
-                    return;
+                    return true;
                 }
             }
             break;
@@ -891,7 +941,7 @@ sc_screen_handle_event(struct sc_screen *screen, SDL_Event *event) {
                         sc_screen_toggle_mouse_capture(screen);
                     }
                     // Mouse capture keys are never forwarded to the device
-                    return;
+                    return true;
                 }
             }
             break;
@@ -901,7 +951,7 @@ sc_screen_handle_event(struct sc_screen *screen, SDL_Event *event) {
             if (relative_mode && !sc_screen_get_mouse_capture(screen)) {
                 // Do not forward to input manager, the mouse will be captured
                 // on SDL_MOUSEBUTTONUP
-                return;
+                return true;
             }
             break;
         case SDL_FINGERMOTION:
@@ -910,54 +960,74 @@ sc_screen_handle_event(struct sc_screen *screen, SDL_Event *event) {
             if (relative_mode) {
                 // Touch events are not compatible with relative mode
                 // (coordinates are not relative)
-                return;
+                return true;
             }
             break;
         case SDL_MOUSEBUTTONUP:
             if (relative_mode && !sc_screen_get_mouse_capture(screen)) {
                 sc_screen_set_mouse_capture(screen, true);
-                return;
+                return true;
             }
             break;
     }
 
     sc_input_manager_handle_event(&screen->im, event);
+    return true;
 }
 
 struct sc_point
 sc_screen_convert_drawable_to_frame_coords(struct sc_screen *screen,
                                            int32_t x, int32_t y) {
-    unsigned rotation = screen->rotation;
-    assert(rotation < 4);
+    assert(screen->video);
+
+    enum sc_orientation orientation = screen->orientation;
 
     int32_t w = screen->content_size.width;
     int32_t h = screen->content_size.height;
 
+    // screen->rect must be initialized to avoid a division by zero
+    assert(screen->rect.w && screen->rect.h);
 
     x = (int64_t) (x - screen->rect.x) * w / screen->rect.w;
     y = (int64_t) (y - screen->rect.y) * h / screen->rect.h;
 
-    // rotate
     struct sc_point result;
-    switch (rotation) {
-        case 0:
+    switch (orientation) {
+        case SC_ORIENTATION_0:
             result.x = x;
             result.y = y;
             break;
-        case 1:
-            result.x = h - y;
-            result.y = x;
-            break;
-        case 2:
-            result.x = w - x;
-            result.y = h - y;
-            break;
-        default:
-            assert(rotation == 3);
+        case SC_ORIENTATION_90:
             result.x = y;
             result.y = w - x;
             break;
+        case SC_ORIENTATION_180:
+            result.x = w - x;
+            result.y = h - y;
+            break;
+        case SC_ORIENTATION_270:
+            result.x = h - y;
+            result.y = x;
+            break;
+        case SC_ORIENTATION_FLIP_0:
+            result.x = w - x;
+            result.y = y;
+            break;
+        case SC_ORIENTATION_FLIP_90:
+            result.x = h - y;
+            result.y = w - x;
+            break;
+        case SC_ORIENTATION_FLIP_180:
+            result.x = x;
+            result.y = h - y;
+            break;
+        default:
+            assert(orientation == SC_ORIENTATION_FLIP_270);
+            result.x = y;
+            result.y = x;
+            break;
     }
+
     return result;
 }
 

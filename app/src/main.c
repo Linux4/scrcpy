@@ -4,10 +4,6 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <libavformat/avformat.h>
-#ifdef _WIN32
-#include <windows.h>
-#include "util/str.h"
-#endif
 #ifdef HAVE_V4L2
 # include <libavdevice/avdevice.h>
 #endif
@@ -19,9 +15,15 @@
 #include "scrcpy.h"
 #include "usb/scrcpy_otg.h"
 #include "util/log.h"
+#include "util/net.h"
 #include "version.h"
 
-int
+#ifdef _WIN32
+#include <windows.h>
+#include "util/str.h"
+#endif
+
+static int
 main_scrcpy(int argc, char *argv[]) {
 #ifdef _WIN32
     // disable buffering, we want logs immediately
@@ -37,26 +39,32 @@ main_scrcpy(int argc, char *argv[]) {
         .opts = scrcpy_options_default,
         .help = false,
         .version = false,
+        .pause_on_exit = SC_PAUSE_ON_EXIT_FALSE,
     };
 
 #ifndef NDEBUG
     args.opts.log_level = SC_LOG_LEVEL_DEBUG;
 #endif
 
+    enum scrcpy_exit_code ret;
+
     if (!scrcpy_parse_args(&args, argc, argv)) {
-        return SCRCPY_EXIT_FAILURE;
+        ret = SCRCPY_EXIT_FAILURE;
+        goto end;
     }
 
     sc_set_log_level(args.opts.log_level);
 
     if (args.help) {
         scrcpy_print_usage(argv[0]);
-        return SCRCPY_EXIT_SUCCESS;
+        ret = SCRCPY_EXIT_SUCCESS;
+        goto end;
     }
 
     if (args.version) {
         scrcpy_print_version();
-        return SCRCPY_EXIT_SUCCESS;
+        ret = SCRCPY_EXIT_SUCCESS;
+        goto end;
     }
 
 #ifdef SCRCPY_LAVF_REQUIRES_REGISTER_ALL
@@ -69,18 +77,26 @@ main_scrcpy(int argc, char *argv[]) {
     }
 #endif
 
-    if (avformat_network_init()) {
-        return SCRCPY_EXIT_FAILURE;
+    if (!net_init()) {
+        ret = SCRCPY_EXIT_FAILURE;
+        goto end;
     }
 
+    sc_log_configure();
+
 #ifdef HAVE_USB
-    enum scrcpy_exit_code ret = args.opts.otg ? scrcpy_otg(&args.opts)
-                                              : scrcpy(&args.opts);
+    ret = args.opts.otg ? scrcpy_otg(&args.opts) : scrcpy(&args.opts);
 #else
-    enum scrcpy_exit_code ret = scrcpy(&args.opts);
+    ret = scrcpy(&args.opts);
 #endif
 
-    avformat_network_deinit(); // ignore failure
+end:
+    if (args.pause_on_exit == SC_PAUSE_ON_EXIT_TRUE ||
+            (args.pause_on_exit == SC_PAUSE_ON_EXIT_IF_ERROR &&
+                ret != SCRCPY_EXIT_SUCCESS)) {
+        printf("Press Enter to continue...\n");
+        getchar();
+    }
 
     return ret;
 }

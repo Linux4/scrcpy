@@ -4,44 +4,59 @@ src = [
     'src/adb/adb_device.c',
     'src/adb/adb_parser.c',
     'src/adb/adb_tunnel.c',
+    'src/audio_player.c',
     'src/cli.c',
     'src/clock.c',
     'src/compat.c',
     'src/control_msg.c',
     'src/controller.c',
     'src/decoder.c',
+    'src/delay_buffer.c',
     'src/demuxer.c',
     'src/device_msg.c',
+    'src/display.c',
     'src/icon.c',
     'src/file_pusher.c',
     'src/fps_counter.c',
     'src/frame_buffer.c',
     'src/input_manager.c',
-    'src/keyboard_inject.c',
-    'src/mouse_inject.c',
+    'src/keyboard_sdk.c',
+    'src/mouse_sdk.c',
     'src/opengl.c',
     'src/options.c',
+    'src/packet_merger.c',
     'src/receiver.c',
     'src/recorder.c',
     'src/scrcpy.c',
     'src/screen.c',
     'src/server.c',
     'src/version.c',
-    'src/video_buffer.c',
+    'src/hid/hid_keyboard.c',
+    'src/hid/hid_mouse.c',
+    'src/trait/frame_source.c',
+    'src/trait/packet_source.c',
+    'src/uhid/keyboard_uhid.c',
+    'src/uhid/mouse_uhid.c',
+    'src/uhid/uhid_output.c',
     'src/util/acksync.c',
+    'src/util/audiobuf.c',
+    'src/util/average.c',
     'src/util/file.c',
     'src/util/intmap.c',
     'src/util/intr.c',
     'src/util/log.c',
+    'src/util/memory.c',
     'src/util/net.c',
     'src/util/net_intr.c',
     'src/util/process.c',
     'src/util/process_intr.c',
+    'src/util/rand.c',
     'src/util/strbuf.c',
     'src/util/str.c',
     'src/util/term.c',
     'src/util/thread.c',
     'src/util/tick.c',
+    'src/util/timeout.c',
 ]
 
 conf = configuration_data()
@@ -78,8 +93,8 @@ usb_support = get_option('usb')
 if usb_support
     src += [
         'src/usb/aoa_hid.c',
-        'src/usb/hid_keyboard.c',
-        'src/usb/hid_mouse.c',
+        'src/usb/keyboard_aoa.c',
+        'src/usb/mouse_aoa.c',
         'src/usb/scrcpy_otg.c',
         'src/usb/screen_otg.c',
         'src/usb/usb.c',
@@ -88,81 +103,24 @@ endif
 
 cc = meson.get_compiler('c')
 
-crossbuild_windows = meson.is_cross_build() and host_machine.system() == 'windows'
+dependencies = [
+    dependency('libavformat', version: '>= 57.33'),
+    dependency('libavcodec', version: '>= 57.37'),
+    dependency('libavutil'),
+    dependency('libswresample'),
+    dependency('sdl2', version: '>= 2.0.5'),
+]
 
-if not crossbuild_windows
+if v4l2_support
+    dependencies += dependency('libavdevice')
+endif
 
-    # native build
-    dependencies = [
-        dependency('libavformat', version: '>= 57.33'),
-        dependency('libavcodec', version: '>= 57.37'),
-        dependency('libavutil'),
-        dependency('sdl2', version: '>= 2.0.5'),
-    ]
-
-    if v4l2_support
-        dependencies += dependency('libavdevice')
-    endif
-
-    if usb_support
-        dependencies += dependency('libusb-1.0')
-    endif
-
-else
-    # cross-compile mingw32 build (from Linux to Windows)
-    prebuilt_sdl2 = meson.get_cross_property('prebuilt_sdl2')
-    sdl2_bin_dir = meson.current_source_dir() + '/prebuilt-deps/data/' + prebuilt_sdl2 + '/bin'
-    sdl2_lib_dir = meson.current_source_dir() + '/prebuilt-deps/data/' + prebuilt_sdl2 + '/lib'
-    sdl2_include_dir = 'prebuilt-deps/data/' + prebuilt_sdl2 + '/include'
-
-    sdl2 = declare_dependency(
-        dependencies: [
-            cc.find_library('SDL2', dirs: sdl2_bin_dir),
-            cc.find_library('SDL2main', dirs: sdl2_lib_dir),
-        ],
-        include_directories: include_directories(sdl2_include_dir)
-    )
-
-    prebuilt_ffmpeg = meson.get_cross_property('prebuilt_ffmpeg')
-    ffmpeg_bin_dir = meson.current_source_dir() + '/prebuilt-deps/data/' + prebuilt_ffmpeg + '/bin'
-    ffmpeg_include_dir = 'prebuilt-deps/data/' + prebuilt_ffmpeg + '/include'
-
-    # ffmpeg versions are different for win32 and win64 builds
-    ffmpeg_avcodec = meson.get_cross_property('ffmpeg_avcodec')
-    ffmpeg_avformat = meson.get_cross_property('ffmpeg_avformat')
-    ffmpeg_avutil = meson.get_cross_property('ffmpeg_avutil')
-
-    ffmpeg = declare_dependency(
-        dependencies: [
-            cc.find_library(ffmpeg_avcodec, dirs: ffmpeg_bin_dir),
-            cc.find_library(ffmpeg_avformat, dirs: ffmpeg_bin_dir),
-            cc.find_library(ffmpeg_avutil, dirs: ffmpeg_bin_dir),
-        ],
-        include_directories: include_directories(ffmpeg_include_dir)
-    )
-
-    prebuilt_libusb = meson.get_cross_property('prebuilt_libusb')
-    prebuilt_libusb_root = meson.get_cross_property('prebuilt_libusb_root')
-    libusb_bin_dir = meson.current_source_dir() + '/prebuilt-deps/data/' + prebuilt_libusb
-    libusb_include_dir = 'prebuilt-deps/data/' + prebuilt_libusb_root + '/include'
-
-    libusb = declare_dependency(
-        dependencies: [
-            cc.find_library('msys-usb-1.0', dirs: libusb_bin_dir),
-        ],
-        include_directories: include_directories(libusb_include_dir)
-    )
-
-    dependencies = [
-        ffmpeg,
-        sdl2,
-        libusb,
-        cc.find_library('mingw32')
-    ]
-
+if usb_support
+    dependencies += dependency('libusb-1.0')
 endif
 
 if host_machine.system() == 'windows'
+    dependencies += cc.find_library('mingw32')
     dependencies += cc.find_library('ws2_32')
 endif
 
@@ -170,6 +128,9 @@ check_functions = [
     'strdup',
     'asprintf',
     'vasprintf',
+    'nrand48',
+    'jrand48',
+    'reallocarray',
 ]
 
 foreach f : check_functions
@@ -196,10 +157,6 @@ conf.set('PORTABLE', get_option('portable'))
 # overridden by option --port
 conf.set('DEFAULT_LOCAL_PORT_RANGE_FIRST', '27183')
 conf.set('DEFAULT_LOCAL_PORT_RANGE_LAST', '27199')
-
-# the default video bitrate, in bits/second
-# overridden by option --bit-rate
-conf.set('DEFAULT_BIT_RATE', '8000000')  # 8Mbps
 
 # run a server debugger and wait for a client to be attached
 conf.set('SERVER_DEBUGGER', get_option('server_debugger'))
@@ -260,8 +217,10 @@ if get_option('buildtype') == 'debug'
         ['test_binary', [
             'tests/test_binary.c',
         ]],
-        ['test_cbuf', [
-            'tests/test_cbuf.c',
+        ['test_audiobuf', [
+            'tests/test_audiobuf.c',
+            'src/util/audiobuf.c',
+            'src/util/memory.c',
         ]],
         ['test_cli', [
             'tests/test_cli.c',
@@ -273,10 +232,6 @@ if get_option('buildtype') == 'debug'
             'src/util/strbuf.c',
             'src/util/term.c',
         ]],
-        ['test_clock', [
-            'tests/test_clock.c',
-            'src/clock.c',
-        ]],
         ['test_control_msg_serialize', [
             'tests/test_control_msg_serialize.c',
             'src/control_msg.c',
@@ -287,8 +242,9 @@ if get_option('buildtype') == 'debug'
             'tests/test_device_msg_deserialize.c',
             'src/device_msg.c',
         ]],
-        ['test_queue', [
-            'tests/test_queue.c',
+        ['test_orientation', [
+            'tests/test_orientation.c',
+            'src/options.c',
         ]],
         ['test_strbuf', [
             'tests/test_strbuf.c',
@@ -299,13 +255,18 @@ if get_option('buildtype') == 'debug'
             'src/util/str.c',
             'src/util/strbuf.c',
         ]],
+        ['test_vecdeque', [
+            'tests/test_vecdeque.c',
+            'src/util/memory.c',
+        ]],
         ['test_vector', [
             'tests/test_vector.c',
         ]],
     ]
 
     foreach t : tests
-        exe = executable(t[0], t[1],
+        sources = t[1] + ['src/compat.c']
+        exe = executable(t[0], sources,
                          include_directories: src_dir,
                          dependencies: dependencies,
                          c_args: ['-DSDL_MAIN_HANDLED', '-DSC_TEST'])

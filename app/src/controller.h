@@ -8,11 +8,11 @@
 #include "control_msg.h"
 #include "receiver.h"
 #include "util/acksync.h"
-#include "util/cbuf.h"
 #include "util/net.h"
 #include "util/thread.h"
+#include "util/vecdeque.h"
 
-struct sc_control_msg_queue CBUF(struct sc_control_msg, 64);
+struct sc_control_msg_queue SC_VECDEQUE(struct sc_control_msg);
 
 struct sc_controller {
     sc_socket control_socket;
@@ -21,12 +21,26 @@ struct sc_controller {
     sc_cond msg_cond;
     bool stopped;
     struct sc_control_msg_queue queue;
-    struct receiver receiver;
+    struct sc_receiver receiver;
+
+    const struct sc_controller_callbacks *cbs;
+    void *cbs_userdata;
+};
+
+struct sc_controller_callbacks {
+    void (*on_ended)(struct sc_controller *controller, bool error,
+                     void *userdata);
 };
 
 bool
 sc_controller_init(struct sc_controller *controller, sc_socket control_socket,
-                   struct sc_acksync *acksync);
+                   const struct sc_controller_callbacks *cbs,
+                   void *cbs_userdata);
+
+void
+sc_controller_configure(struct sc_controller *controller,
+                        struct sc_acksync *acksync,
+                        struct sc_uhid_devices *uhid_devices);
 
 void
 sc_controller_destroy(struct sc_controller *controller);
