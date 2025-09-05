@@ -21,8 +21,8 @@ Vcs-Browser: https://salsa.debian.org/yangfl-guest/scrcpy
 Package: scrcpy
 Architecture: any
 Depends: ${misc:Depends}, ${shlibs:Depends},
-Breaks: scrcpy-server (<< 2.6.1),
-Replaces: scrcpy-server (<< 2.6.1),
+Breaks: scrcpy-server (<< 3.3.1),
+Replaces: scrcpy-server (<< 3.3.1),
 Recommends: adb, wget, ca-certificates,
 Description: Display and control your Android devices
  scrcpy mirrors Android devices (video and audio) connected via USB or over
