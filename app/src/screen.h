@@ -1,11 +1,14 @@
-#ifndef SCREEN_H
-#define SCREEN_H
+#ifndef SC_SCREEN_H
+#define SC_SCREEN_H
 
 #include "common.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <SDL2/SDL.h>
-#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/frame.h>
+#include <libavutil/pixfmt.h>
 
 #include "controller.h"
 #include "coords.h"
@@ -13,7 +16,7 @@
 #include "fps_counter.h"
 #include "frame_buffer.h"
 #include "input_manager.h"
-#include "opengl.h"
+#include "mouse_capture.h"
 #include "options.h"
 #include "trait/key_processor.h"
 #include "trait/frame_sink.h"
@@ -30,6 +33,7 @@ struct sc_screen {
 
     struct sc_display display;
     struct sc_input_manager im;
+    struct sc_mouse_capture mc; // only used in mouse relative mode
     struct sc_frame_buffer fb;
     struct sc_fps_counter fps_counter;
 
@@ -61,10 +65,6 @@ struct sc_screen {
     bool maximized;
     bool minimized;
 
-    // To enable/disable mouse capture, a mouse capture key (LALT, LGUI or
-    // RGUI) must be pressed. This variable tracks the pressed capture key.
-    SDL_Keycode mouse_capture_key_pressed;
-
     AVFrame *frame;
 
     bool paused;
@@ -78,6 +78,7 @@ struct sc_screen_params {
     struct sc_file_pusher *fp;
     struct sc_key_processor *kp;
     struct sc_mouse_processor *mp;
+    struct sc_gamepad_processor *gp;
 
     struct sc_mouse_bindings mouse_bindings;
     bool legacy_paste;
@@ -125,9 +126,9 @@ sc_screen_destroy(struct sc_screen *screen);
 void
 sc_screen_hide_window(struct sc_screen *screen);
 
-// switch the fullscreen mode
+// toggle the fullscreen mode
 void
-sc_screen_switch_fullscreen(struct sc_screen *screen);
+sc_screen_toggle_fullscreen(struct sc_screen *screen);
 
 // resize window to optimal size (remove black borders)
 void

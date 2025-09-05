@@ -35,17 +35,14 @@ enum sc_control_msg_type {
     SC_CONTROL_MSG_TYPE_COLLAPSE_PANELS,
     SC_CONTROL_MSG_TYPE_GET_CLIPBOARD,
     SC_CONTROL_MSG_TYPE_SET_CLIPBOARD,
-    SC_CONTROL_MSG_TYPE_SET_SCREEN_POWER_MODE,
+    SC_CONTROL_MSG_TYPE_SET_DISPLAY_POWER,
     SC_CONTROL_MSG_TYPE_ROTATE_DEVICE,
     SC_CONTROL_MSG_TYPE_UHID_CREATE,
     SC_CONTROL_MSG_TYPE_UHID_INPUT,
+    SC_CONTROL_MSG_TYPE_UHID_DESTROY,
     SC_CONTROL_MSG_TYPE_OPEN_HARD_KEYBOARD_SETTINGS,
-};
-
-enum sc_screen_power_mode {
-    // see <https://android.googlesource.com/platform/frameworks/base.git/+/pie-release-2/core/java/android/view/SurfaceControl.java#305>
-    SC_SCREEN_POWER_MODE_OFF = 0,
-    SC_SCREEN_POWER_MODE_NORMAL = 2,
+    SC_CONTROL_MSG_TYPE_START_APP,
+    SC_CONTROL_MSG_TYPE_RESET_VIDEO,
 };
 
 enum sc_copy_key {
@@ -93,10 +90,13 @@ struct sc_control_msg {
             bool paste;
         } set_clipboard;
         struct {
-            enum sc_screen_power_mode mode;
-        } set_screen_power_mode;
+            bool on;
+        } set_display_power;
         struct {
             uint16_t id;
+            uint16_t vendor_id;
+            uint16_t product_id;
+            const char *name; // pointer to static data
             uint16_t report_desc_size;
             const uint8_t *report_desc; // pointer to static data
         } uhid_create;
@@ -105,6 +105,12 @@ struct sc_control_msg {
             uint16_t size;
             uint8_t data[SC_HID_MAX_SIZE];
         } uhid_input;
+        struct {
+            uint16_t id;
+        } uhid_destroy;
+        struct {
+            char *name;
+        } start_app;
     };
 };
 
@@ -115,6 +121,11 @@ sc_control_msg_serialize(const struct sc_control_msg *msg, uint8_t *buf);
 
 void
 sc_control_msg_log(const struct sc_control_msg *msg);
+
+// Even when the buffer is "full", some messages must absolutely not be dropped
+// to avoid inconsistencies.
+bool
+sc_control_msg_is_droppable(const struct sc_control_msg *msg);
 
 void
 sc_control_msg_destroy(struct sc_control_msg *msg);

@@ -1,5 +1,7 @@
 #include "options.h"
 
+#include <stddef.h>
+
 const struct scrcpy_options scrcpy_options_default = {
     .serial = NULL,
     .crop = NULL,
@@ -23,6 +25,7 @@ const struct scrcpy_options scrcpy_options_default = {
     .record_format = SC_RECORD_FORMAT_AUTO,
     .keyboard_input_mode = SC_KEYBOARD_INPUT_MODE_AUTO,
     .mouse_input_mode = SC_MOUSE_INPUT_MODE_AUTO,
+    .gamepad_input_mode = SC_GAMEPAD_INPUT_MODE_DISABLED,
     .mouse_bindings = {
         .pri = {
             .right_click = SC_MOUSE_BINDING_AUTO,
@@ -48,19 +51,22 @@ const struct scrcpy_options scrcpy_options_default = {
     .max_size = 0,
     .video_bit_rate = 0,
     .audio_bit_rate = 0,
-    .max_fps = 0,
-    .lock_video_orientation = SC_LOCK_VIDEO_ORIENTATION_UNLOCKED,
+    .max_fps = NULL,
+    .capture_orientation = SC_ORIENTATION_0,
+    .capture_orientation_lock = SC_ORIENTATION_UNLOCKED,
     .display_orientation = SC_ORIENTATION_0,
     .record_orientation = SC_ORIENTATION_0,
+    .display_ime_policy = SC_DISPLAY_IME_POLICY_UNDEFINED,
     .window_x = SC_WINDOW_POSITION_UNDEFINED,
     .window_y = SC_WINDOW_POSITION_UNDEFINED,
     .window_width = 0,
     .window_height = 0,
     .display_id = 0,
-    .display_buffer = 0,
+    .video_buffer = 0,
     .audio_buffer = -1, // depends on the audio format,
     .audio_output_buffer = SC_TICK_FROM_MS(5),
     .time_limit = 0,
+    .screen_off_timeout = -1,
 #ifdef HAVE_V4L2
     .v4l2_device = NULL,
     .v4l2_buffer = 0,
@@ -102,6 +108,11 @@ const struct scrcpy_options scrcpy_options_default = {
     .window = true,
     .mouse_hover = true,
     .audio_dup = false,
+    .new_display = NULL,
+    .start_app = NULL,
+    .angle = NULL,
+    .vd_destroy_content = true,
+    .vd_system_decorations = true,
 };
 
 enum sc_orientation

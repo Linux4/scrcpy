@@ -51,7 +51,6 @@ static void test_options(void) {
         "--fullscreen",
         "--max-fps", "30",
         "--max-size", "1024",
-        "--lock-video-orientation=2", // optional arguments require '='
         // "--no-control" is not compatible with "--turn-screen-off"
         // "--no-playback" is not compatible with "--fulscreen"
         "--port", "1234:1236",
@@ -78,9 +77,8 @@ static void test_options(void) {
     assert(opts->video_bit_rate == 5000000);
     assert(!strcmp(opts->crop, "100:200:300:400"));
     assert(opts->fullscreen);
-    assert(opts->max_fps == 30);
+    assert(!strcmp(opts->max_fps, "30"));
     assert(opts->max_size == 1024);
-    assert(opts->lock_video_orientation == 2);
     assert(opts->port_range.first == 1234);
     assert(opts->port_range.last == 1236);
     assert(!strcmp(opts->push_target, "/sdcard/Movies"));

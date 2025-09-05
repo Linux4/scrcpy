@@ -1,6 +1,9 @@
 package com.genymobile.scrcpy.control;
 
+import com.genymobile.scrcpy.AndroidVersions;
 import com.genymobile.scrcpy.util.Ln;
+import com.genymobile.scrcpy.util.StringUtils;
+import com.genymobile.scrcpy.wrappers.ServiceManager;
 
 import android.os.Build;
 import android.os.HandlerThread;
@@ -29,36 +32,49 @@ public final class UhidManager {
 
     private static final int SIZE_OF_UHID_EVENT = 4380; // sizeof(struct uhid_event)
 
+    // Must be unique across the system
+    private static final String INPUT_PORT = "scrcpy:" + Os.getpid();
+
+    private final String displayUniqueId;
+
     private final ArrayMap<Integer, FileDescriptor> fds = new ArrayMap<>();
     private final ByteBuffer buffer = ByteBuffer.allocate(SIZE_OF_UHID_EVENT).order(ByteOrder.nativeOrder());
 
     private final DeviceMessageSender sender;
-    private final HandlerThread thread = new HandlerThread("UHidManager");
     private final MessageQueue queue;
 
-    public UhidManager(DeviceMessageSender sender) {
+    public UhidManager(DeviceMessageSender sender, String displayUniqueId) {
         this.sender = sender;
-        thread.start();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        this.displayUniqueId = displayUniqueId;
+        if (Build.VERSION.SDK_INT >= AndroidVersions.API_23_ANDROID_6_0) {
+            HandlerThread thread = new HandlerThread("UHidManager");
+            thread.start();
             queue = thread.getLooper().getQueue();
         } else {
             queue = null;
         }
     }
 
-    public void open(int id, byte[] reportDesc) throws IOException {
+    public void open(int id, int vendorId, int productId, String name, byte[] reportDesc) throws IOException {
         try {
             FileDescriptor fd = Os.open("/dev/uhid", OsConstants.O_RDWR, 0);
             try {
+                // First UHID device added
+                boolean firstDevice = fds.isEmpty();
+
                 FileDescriptor old = fds.put(id, fd);
                 if (old != null) {
                     Ln.w("Duplicate UHID id: " + id);
                     close(old);
                 }
 
-                byte[] req = buildUhidCreate2Req(reportDesc);
+                String phys = mustUseInputPort() ? INPUT_PORT : null;
+                byte[] req = buildUhidCreate2Req(vendorId, productId, name, reportDesc, phys);
                 Os.write(fd, req, 0, req.length);
 
+                if (firstDevice) {
+                    addUniqueIdAssociation();
+                }
                 registerUhidListener(id, fd);
             } catch (Exception e) {
                 close(fd);
@@ -70,7 +86,7 @@ public final class UhidManager {
     }
 
     private void registerUhidListener(int id, FileDescriptor fd) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (Build.VERSION.SDK_INT >= AndroidVersions.API_23_ANDROID_6_0) {
             queue.addOnFileDescriptorEventListener(fd, MessageQueue.OnFileDescriptorEventListener.EVENT_INPUT, (fd2, events) -> {
                 try {
                     buffer.clear();
@@ -92,6 +108,12 @@ public final class UhidManager {
                 }
                 return events;
             });
+        }
+    }
+
+    private void unregisterUhidListener(FileDescriptor fd) {
+        if (Build.VERSION.SDK_INT >= AndroidVersions.API_23_ANDROID_6_0) {
+            queue.removeOnFileDescriptorEventListener(fd);
         }
     }
 
@@ -140,7 +162,7 @@ public final class UhidManager {
         }
     }
 
-    private static byte[] buildUhidCreate2Req(byte[] reportDesc) {
+    private static byte[] buildUhidCreate2Req(int vendorId, int productId, String name, byte[] reportDesc, String phys) {
         /*
          * struct uhid_event {
          *     uint32_t type;
@@ -162,15 +184,27 @@ public final class UhidManager {
          * } __attribute__((__packed__));
          */
 
-        byte[] empty = new byte[256];
         ByteBuffer buf = ByteBuffer.allocate(280 + reportDesc.length).order(ByteOrder.nativeOrder());
         buf.putInt(UHID_CREATE2);
-        buf.put("scrcpy".getBytes(StandardCharsets.US_ASCII));
-        buf.put(empty, 0, 256 - "scrcpy".length());
+
+        String actualName = name.isEmpty() ? "scrcpy" : name;
+        byte[] nameBytes = actualName.getBytes(StandardCharsets.UTF_8);
+        int nameLen = StringUtils.getUtf8TruncationIndex(nameBytes, 127);
+        assert nameLen <= 127;
+        buf.put(nameBytes, 0, nameLen);
+
+        if (phys != null) {
+            buf.position(4 + 128);
+            byte[] physBytes = phys.getBytes(StandardCharsets.US_ASCII);
+            assert physBytes.length <= 63;
+            buf.put(physBytes);
+        }
+
+        buf.position(4 + 256);
         buf.putShort((short) reportDesc.length);
         buf.putShort(BUS_VIRTUAL);
-        buf.putInt(0); // vendor id
-        buf.putInt(0); // product id
+        buf.putInt(vendorId);
+        buf.putInt(productId);
         buf.putInt(0); // version
         buf.putInt(0); // country;
         buf.put(reportDesc);
@@ -199,15 +233,32 @@ public final class UhidManager {
     }
 
     public void close(int id) {
-        FileDescriptor fd = fds.get(id);
-        assert fd != null;
-        close(fd);
+        // Linux: Documentation/hid/uhid.rst
+        // If you close() the fd, the device is automatically unregistered and destroyed internally.
+        FileDescriptor fd = fds.remove(id);
+        if (fd != null) {
+            unregisterUhidListener(fd);
+            close(fd);
+
+            if (fds.isEmpty()) {
+                // Last UHID device removed
+                removeUniqueIdAssociation();
+            }
+        } else {
+            Ln.w("Closing unknown UHID device: " + id);
+        }
     }
 
     public void closeAll() {
+        if (fds.isEmpty()) {
+            return;
+        }
+
         for (FileDescriptor fd : fds.values()) {
             close(fd);
         }
+
+        removeUniqueIdAssociation();
     }
 
     private static void close(FileDescriptor fd) {
@@ -215,6 +266,22 @@ public final class UhidManager {
             Os.close(fd);
         } catch (ErrnoException e) {
             Ln.e("Failed to close uhid: " + e.getMessage());
+        }
+    }
+
+    private boolean mustUseInputPort() {
+        return Build.VERSION.SDK_INT >= AndroidVersions.API_35_ANDROID_15 && displayUniqueId != null;
+    }
+
+    private void addUniqueIdAssociation() {
+        if (mustUseInputPort()) {
+            ServiceManager.getInputManager().addUniqueIdAssociationByPort(INPUT_PORT, displayUniqueId);
+        }
+    }
+
+    private void removeUniqueIdAssociation() {
+        if (mustUseInputPort()) {
+            ServiceManager.getInputManager().removeUniqueIdAssociationByPort(INPUT_PORT);
         }
     }
 }
